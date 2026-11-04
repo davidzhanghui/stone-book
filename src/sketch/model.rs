@@ -92,7 +92,7 @@ impl SketchDoc {
     }
 
     /// 未删除的元素（官方文件里删除的元素也可能留着 `isDeleted: true`）。
-    pub fn live(&self) -> impl Iterator<Item = &Element> {
+    pub fn live(&self) -> impl DoubleEndedIterator<Item = &Element> {
         self.elements.iter().filter(|e| !e.is_deleted)
     }
 
@@ -327,10 +327,6 @@ impl Element {
     /// 能被箭头绑定
     pub fn is_bindable(&self) -> bool {
         matches!(self.kind.as_str(), "rectangle" | "diamond" | "ellipse" | "text" | "image" | "frame" | "magicframe" | "iframe" | "embeddable")
-    }
-    /// 石渠不会编辑、只占位显示的类型
-    pub fn is_unsupported(&self) -> bool {
-        matches!(self.kind.as_str(), "iframe" | "embeddable")
     }
 
     pub fn has_fill(&self) -> bool {

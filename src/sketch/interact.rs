@@ -2,6 +2,7 @@
 //! 脚本测试（autotest）直接调用这三个函数。
 
 use super::geom::{self, v, R, V};
+use super::model::Element;
 use super::model::*;
 use super::view::*;
 use gpui::*;
@@ -580,7 +581,7 @@ impl SketchEditor {
                     _ => (o.x + o.width, o.y + o.height / 2.),
                 };
                 let sx = if matches!(h, 0 | 6 | 7) { -1. } else { 1. };
-                let sy = if matches!(h, 0 | 1 | 2) { -1. } else { 1. };
+                let sy = if matches!(h, 0..=2) { -1. } else { 1. };
                 x0 = match h {
                     1 | 5 => ax - nw / 2.,
                     _ => ax,
@@ -650,7 +651,7 @@ impl SketchEditor {
             }
             // 锚点：被拖手柄的对侧
             let ax = if matches!(h, 0 | 6 | 7) { b0.x1 } else { b0.x0 };
-            let ay = if matches!(h, 0 | 1 | 2) { b0.y1 } else { b0.y0 };
+            let ay = if matches!(h, 0..=2) { b0.y1 } else { b0.y0 };
             let (sx, sy) = (sx.abs(), sy.abs());
             let map = |p: V| v(ax + (p.x - ax) * sx, ay + (p.y - ay) * sy);
             for o in orig {
@@ -855,7 +856,7 @@ impl SketchEditor {
             if let Some(te) = self.doc.get_mut(t) {
                 te.add_bound(id, "arrow");
             }
-            geom::update_bound_arrows(&mut self.doc, &[t.clone()]);
+            geom::update_bound_arrows(&mut self.doc, std::slice::from_ref(t));
         }
     }
 

@@ -237,13 +237,7 @@ fn p2(x: f64, y: f64) -> Point2D<f32> {
 
 /// 圆角矩形路径（官方用二次曲线）
 fn round_rect_d(w: f64, h: f64, r: f64) -> String {
-    format!(
-        "M {r} 0 L {} 0 Q {w} 0, {w} {r} L {w} {} Q {w} {h}, {} {h} L {r} {h} Q 0 {h}, 0 {} L 0 {r} Q 0 0, {r} 0",
-        w - r,
-        h - r,
-        w - r,
-        h - r
-    )
+    format!("M {r} 0 L {} 0 Q {w} 0, {w} {r} L {w} {} Q {w} {h}, {} {h} L {r} {h} Q 0 {h}, 0 {} L 0 {r} Q 0 0, {r} 0", w - r, h - r, w - r, h - r)
 }
 
 fn diamond_pts(w: f64, h: f64) -> [V; 4] {
@@ -278,14 +272,14 @@ fn arrowhead(out: &mut Vec<Prim>, gen: &Generator, e: &Element, kind: &str, tip:
     if seg < 1e-6 {
         return;
     }
-    let base = match kind {
+    let base: f64 = match kind {
         "arrow" => 25.,
         "diamond" | "diamond_outline" => 12.,
         "bar" => 15.,
         _ => 15.,
     };
     let mult = if kind.starts_with("diamond") { 0.25 } else { 0.5 };
-    let size = (base as f64).min(seg * mult).max(4.);
+    let size = base.min(seg * mult).max(4.);
     let dir = tip.sub(from).scale(1. / seg);
     let back = tip.sub(dir.scale(size));
     let mut opts = rough_opts(e, false);
@@ -351,8 +345,64 @@ fn arrowhead(out: &mut Vec<Prim>, gen: &Generator, e: &Element, kind: &str, tip:
     }
 }
 
-/// 生成一个元素的图元（局部坐标）。
+/// 在 CPU 上把路径切成虚线段（实线部分输出为独立子路径）。
+///
+/// 不用 GPUI 的 `dash_array`：它借助 lyon 的路径测量，遇到手绘描边这种多子路径会触发
+/// lyon `measure.rs` 的 `unreachable!`。自己切还能保证屏幕与 SVG 导出的虚线一致。
+pub fn dash_cmds(cmds: &[PathCmd], on: f32, off: f32) -> Vec<PathCmd> {
+    let mut out = vec![];
+    let (on, off) = (on.max(0.5), off.max(0.5));
+    for (mut pts, closed) in crate::canvas::paint::flatten(cmds) {
+        if closed {
+            if let Some(f) = pts.first().copied() {
+                pts.push(f);
+            }
+        }
+        let mut drawing = true;
+        let mut left = on;
+        let mut pen_down = false;
+        for w in pts.windows(2) {
+            let (mut a, b) = (w[0], w[1]);
+            let mut seg = a.dist(b);
+            while seg > 1e-4 {
+                let step = left.min(seg);
+                let t = step / seg;
+                let m = pt(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
+                if drawing {
+                    if !pen_down {
+                        out.push(PathCmd::Move(a));
+                        pen_down = true;
+                    }
+                    out.push(PathCmd::Line(m));
+                }
+                seg -= step;
+                left -= step;
+                a = m;
+                if left <= 1e-4 {
+                    drawing = !drawing;
+                    left = if drawing { on } else { off };
+                    pen_down = false;
+                }
+            }
+        }
+    }
+    out
+}
+
+/// 生成一个元素的图元（局部坐标）。虚线一律在这里切好。
 pub fn prims(doc: &SketchDoc, e: &Element, dark: bool) -> Vec<Prim> {
+    prims_raw(doc, e, dark)
+        .into_iter()
+        .map(|p| match p {
+            Prim::Stroke { cmds, color, width, dash: Some((on, off)), round } => {
+                Prim::Stroke { cmds: dash_cmds(&cmds, on, off), color, width, dash: None, round }
+            }
+            other => other,
+        })
+        .collect()
+}
+
+fn prims_raw(doc: &SketchDoc, e: &Element, dark: bool) -> Vec<Prim> {
     let gen = Generator::default();
     let st = style(e, dark);
     let fw = (e.stroke_width / 2.) as f32;
@@ -362,22 +412,14 @@ pub fn prims(doc: &SketchDoc, e: &Element, dark: bool) -> Vec<Prim> {
         "rectangle" => {
             let o = rough_opts(e, true);
             let r = corner_radius(e);
-            let d = if r > 0. {
-                gen.path::<f32>(round_rect_d(w, h, r), &Some(o))
-            } else {
-                gen.rectangle::<f32>(0., 0., w as f32, h as f32, &Some(o))
-            };
+            let d = if r > 0. { gen.path::<f32>(round_rect_d(w, h, r), &Some(o)) } else { gen.rectangle::<f32>(0., 0., w as f32, h as f32, &Some(o)) };
             push_drawable(&mut out, d, &st, fw);
         }
         "diamond" => {
             let o = rough_opts(e, true);
             let pts = diamond_pts(w, h);
             let r = if e.roundness().is_some() { (w.abs().min(h.abs()) * 0.25 * 0.5).min(20.) } else { 0. };
-            let d = if r > 1. {
-                gen.path::<f32>(round_poly_d(&pts, r), &Some(o))
-            } else {
-                gen.polygon::<f32>(&pts.map(|p| p2(p.x, p.y)), &Some(o))
-            };
+            let d = if r > 1. { gen.path::<f32>(round_poly_d(&pts, r), &Some(o)) } else { gen.polygon::<f32>(&pts.map(|p| p2(p.x, p.y)), &Some(o)) };
             push_drawable(&mut out, d, &st, fw);
         }
         "ellipse" => {
@@ -447,11 +489,8 @@ pub fn prims(doc: &SketchDoc, e: &Element, dark: bool) -> Vec<Prim> {
                 _ => 0,
             };
             // 箭头标签：背后垫画布底色，挡住箭头线
-            let label_bg = e
-                .container_id()
-                .and_then(|c| doc.get(c))
-                .filter(|c| c.is_linear())
-                .map(|_| color(&doc.bg_color(), 100., dark).unwrap_or(Col::rgb(0xffffff)));
+            let label_bg =
+                e.container_id().and_then(|c| doc.get(c)).filter(|c| c.is_linear()).map(|_| color(&doc.bg_color(), 100., dark).unwrap_or(Col::rgb(0xffffff)));
             if let Some(c) = st.stroke {
                 out.push(Prim::Text {
                     lines: text.split('\n').map(|s| s.to_string()).collect(),
@@ -472,7 +511,13 @@ pub fn prims(doc: &SketchDoc, e: &Element, dark: bool) -> Vec<Prim> {
         }
         "frame" | "magicframe" => {
             let c = color(if e.stroke_color == DEFAULT_STROKE { "#bbb" } else { &e.stroke_color }, e.opacity, dark).unwrap_or(Col::rgb(0xbbbbbb));
-            out.push(Prim::Stroke { cmds: crate::canvas::geom::round_rect_cmds(crate::canvas::rect(0., 0., w as f32, h as f32), 8.), color: c, width: 1., dash: None, round: false });
+            out.push(Prim::Stroke {
+                cmds: crate::canvas::geom::round_rect_cmds(crate::canvas::rect(0., 0., w as f32, h as f32), 8.),
+                color: c,
+                width: 1.,
+                dash: None,
+                round: false,
+            });
             let name = e.name().map(|s| s.to_string()).unwrap_or_else(|| if e.kind == "magicframe" { "AI Frame".into() } else { "Frame".into() });
             out.push(Prim::Text {
                 lines: vec![name],
@@ -490,7 +535,13 @@ pub fn prims(doc: &SketchDoc, e: &Element, dark: bool) -> Vec<Prim> {
         // iframe / embeddable 等：虚线框 + 说明，数据原样保留
         _ => {
             let c = color("#868e96", 100., dark).unwrap();
-            out.push(Prim::Stroke { cmds: crate::canvas::geom::round_rect_cmds(crate::canvas::rect(0., 0., w as f32, h as f32), 6.), color: c, width: 1.5, dash: Some((6., 4.)), round: false });
+            out.push(Prim::Stroke {
+                cmds: crate::canvas::geom::round_rect_cmds(crate::canvas::rect(0., 0., w as f32, h as f32), 6.),
+                color: c,
+                width: 1.5,
+                dash: Some((6., 4.)),
+                round: false,
+            });
             let label = match e.link() {
                 Some(l) => format!("嵌入内容（{}）\n{}", e.kind, l),
                 None => format!("不支持的元素：{}", e.kind),
@@ -628,5 +679,26 @@ pub fn font_family(f: i64) -> (&'static str, &'static str) {
         3 | 8 => ("Menlo", "Comic Shanns, Cascadia, Menlo, monospace"),
         // Virgil / Excalifont（手写）
         _ => ("Chalkboard SE", "Excalifont, Virgil, Xiaolai, Chalkboard SE, Kaiti SC, cursive"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dashed_multi_subpath_is_split_on_cpu() {
+        // 两个子路径（手绘描边的典型形状）
+        let cmds = vec![PathCmd::Move(pt(0., 0.)), PathCmd::Line(pt(100., 0.)), PathCmd::Move(pt(0., 2.)), PathCmd::Line(pt(100., 2.))];
+        let d = dash_cmds(&cmds, 8., 10.);
+        let moves = d.iter().filter(|c| matches!(c, PathCmd::Move(_))).count();
+        assert!(moves >= 10, "{moves}");
+        let mut doc = SketchDoc::new();
+        let mut r = Element::new("diamond", 0., 0.);
+        r.width = 100.;
+        r.height = 80.;
+        r.stroke_style = "dashed".into();
+        doc.elements.push(r.clone());
+        assert!(prims(&doc, &r, false).iter().all(|p| !matches!(p, Prim::Stroke { dash: Some(_), .. })));
     }
 }

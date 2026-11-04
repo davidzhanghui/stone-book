@@ -200,7 +200,7 @@ fn swap_in(dir: &Path, pending: &Path, m: &Manifest) -> Result<PathBuf> {
 }
 
 /// 把数据里写死的旧 assets 路径前缀换成新的。
-/// 只处理文本形式的数据（文档、模板、同步块、多维表格、画板 / 流程图 / 导图）；
+/// 只处理文本形式的数据（文档、模板、同步块、多维表格、画板 / 流程图 / 导图、草图）；
 /// 电子表格是长度前缀的二进制，不能改长度，其中的单元格图片需要路径一致才能显示。
 fn rewrite_paths(db: &Path, old: &str, new: &str) -> Result<()> {
     let mut c = rusqlite::Connection::open(db)?;
@@ -216,7 +216,7 @@ fn rewrite_paths(db: &Path, old: &str, new: &str) -> Result<()> {
         "UPDATE base_views SET data = replace(data, ?1, ?2) WHERE instr(data, ?1) > 0",
         "UPDATE link_cards SET image = replace(image, ?1, ?2), favicon = replace(favicon, ?1, ?2) WHERE instr(image, ?1) > 0 OR instr(favicon, ?1) > 0",
         "UPDATE objects SET data = CAST(replace(CAST(data AS TEXT), ?1, ?2) AS BLOB)
-         WHERE kind IN ('board', 'flow', 'mindmap', 'base') AND instr(CAST(data AS TEXT), ?1) > 0",
+         WHERE kind IN ('board', 'flow', 'mindmap', 'base', 'sketch') AND instr(CAST(data AS TEXT), ?1) > 0",
     ] {
         tx.execute(sql, p)?;
     }

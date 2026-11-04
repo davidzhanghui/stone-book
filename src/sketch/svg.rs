@@ -65,7 +65,12 @@ pub fn to_svg(doc: &SketchDoc, only: &[String], o: SvgOpts) -> String {
         let mut clip_open = false;
         if let Some(f) = e.frame_id().and_then(|f| doc.get(f)) {
             clip_n += 1;
-            writeln!(out, "<clipPath id=\"f{clip_n}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"/></clipPath><g clip-path=\"url(#f{clip_n})\">", f.x, f.y, f.width, f.height).ok();
+            writeln!(
+                out,
+                "<clipPath id=\"f{clip_n}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"/></clipPath><g clip-path=\"url(#f{clip_n})\">",
+                f.x, f.y, f.width, f.height
+            )
+            .ok();
             clip_open = true;
         }
         let deg = (xf.angle as f64).to_degrees();
@@ -87,10 +92,15 @@ fn prim_svg(out: &mut String, doc: &SketchDoc, p: &Prim) {
         Prim::Fill { cmds, color } => {
             writeln!(out, "<path d=\"{}\" {} stroke=\"none\"/>", d_attr(cmds), paint_attr("fill", *color)).ok();
         }
-        Prim::Stroke { cmds, color, width, dash, round } => {
+        Prim::Stroke { cmds, color, width, dash, .. } => {
             let dash = dash.map(|(a, b)| format!(" stroke-dasharray=\"{a} {b}\"")).unwrap_or_default();
-            let cap = if *round { "round" } else { "round" };
-            writeln!(out, "<path d=\"{}\" fill=\"none\" {} stroke-width=\"{width}\" stroke-linecap=\"{cap}\" stroke-linejoin=\"round\"{dash}/>", d_attr(cmds), paint_attr("stroke", *color)).ok();
+            writeln!(
+                out,
+                "<path d=\"{}\" fill=\"none\" {} stroke-width=\"{width}\" stroke-linecap=\"round\" stroke-linejoin=\"round\"{dash}/>",
+                d_attr(cmds),
+                paint_attr("stroke", *color)
+            )
+            .ok();
         }
         Prim::Text { lines, x, y, w, size, line_h, color, family, align, bg } => {
             let (_, fam) = font_family(*family);
@@ -100,7 +110,8 @@ fn prim_svg(out: &mut String, doc: &SketchDoc, p: &Prim) {
                 _ => ("start", *x),
             };
             if let Some(bg) = bg {
-                writeln!(out, "<rect x=\"{}\" y=\"{y}\" width=\"{}\" height=\"{}\" {}/>", x - 4., w + 8., line_h * lines.len() as f32, paint_attr("fill", *bg)).ok();
+                writeln!(out, "<rect x=\"{}\" y=\"{y}\" width=\"{}\" height=\"{}\" {}/>", x - 4., w + 8., line_h * lines.len() as f32, paint_attr("fill", *bg))
+                    .ok();
             }
             for (i, l) in lines.iter().enumerate() {
                 // 基线：行顶 + 行高的中部偏下（与屏幕绘制对齐）
@@ -121,7 +132,12 @@ fn prim_svg(out: &mut String, doc: &SketchDoc, p: &Prim) {
                 Some((p, bytes)) => {
                     use base64::Engine;
                     let mime = super::io::mime_of(&p);
-                    writeln!(out, "<image x=\"0\" y=\"0\" width=\"{w}\" height=\"{h}\" preserveAspectRatio=\"none\" href=\"data:{mime};base64,{}\"/>", base64::engine::general_purpose::STANDARD.encode(bytes)).ok();
+                    writeln!(
+                        out,
+                        "<image x=\"0\" y=\"0\" width=\"{w}\" height=\"{h}\" preserveAspectRatio=\"none\" href=\"data:{mime};base64,{}\"/>",
+                        base64::engine::general_purpose::STANDARD.encode(bytes)
+                    )
+                    .ok();
                 }
                 None => {
                     let _ = doc;

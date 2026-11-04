@@ -1,6 +1,7 @@
 //! 草图命令：撤销、删除、剪贴板、成组、层级、对齐、属性修改、文字编辑、导入导出、图片。
 
 use super::geom::{self, v, R, V};
+use super::model::Element;
 use super::model::*;
 use super::view::*;
 use crate::text_area::{TextArea, TextAreaEvent, TextStyle};
@@ -652,6 +653,11 @@ impl SketchEditor {
 
     pub(super) fn finish_edit(&mut self, cx: &mut Context<Self>) {
         let Some(ed) = self.editing.take() else { return };
+        // 以输入框里的最终文字为准（变更事件可能还没送达）
+        let final_text = ed.area.read(cx).text().to_string();
+        if !ed.frame_name && self.doc.get(&ed.id).is_some_and(|e| e.original_text() != final_text) {
+            self.live_text(&ed.id, final_text);
+        }
         if ed.frame_name {
             self.commit(cx);
             return;
@@ -743,7 +749,10 @@ impl SketchEditor {
     // ───────────── 图片 ─────────────
 
     pub(super) fn pick_image(&mut self, at: Option<V>, _window: &mut Window, cx: &mut Context<Self>) {
-        let rx = cx.prompt_for_paths(PathPromptOptions { files: true, directories: false, multiple: false, prompt: Some("插入图片".into()) });
+        let rx =
+            cx.prompt_for_paths(PathPromptOptions {
+                files: true, directories: false, multiple: false, prompt: Some("插入图片".into()), ..Default::default()
+            });
         let at = at.unwrap_or_else(|| self.to_world(self.canvas_bounds.center()));
         cx.spawn(async move |this: WeakEntity<SketchEditor>, cx: &mut AsyncApp| {
             if let Ok(Ok(Some(paths))) = rx.await {
@@ -795,7 +804,16 @@ impl SketchEditor {
         let at = at.unwrap_or_else(|| self.to_world(self.canvas_bounds.center()));
         self.snapshot();
         let fid = new_id();
-        self.doc.files.insert(fid.clone(), FileData { id: fid.clone(), mime_type: super::io::mime_of(&path).into(), data_url: String::new(), local_path: Some(path), extra: Default::default() });
+        self.doc.files.insert(
+            fid.clone(),
+            FileData {
+                id: fid.clone(),
+                mime_type: super::io::mime_of(&path).into(),
+                data_url: String::new(),
+                local_path: Some(path),
+                extra: Default::default(),
+            },
+        );
         let mut e = Element::new("image", at.x - w / 2., at.y - h / 2.);
         e.width = w;
         e.height = h;
@@ -814,7 +832,8 @@ impl SketchEditor {
 
     pub(super) fn open_file(&mut self, cx: &mut Context<Self>) {
         self.popover = None;
-        let rx = cx.prompt_for_paths(PathPromptOptions { files: true, directories: false, multiple: false, prompt: Some("打开".into()) });
+        let rx =
+            cx.prompt_for_paths(PathPromptOptions { files: true, directories: false, multiple: false, prompt: Some("打开".into()), ..Default::default() });
         cx.spawn(async move |this: WeakEntity<SketchEditor>, cx: &mut AsyncApp| {
             if let Ok(Ok(Some(paths))) = rx.await {
                 if let Some(p) = paths.first() {

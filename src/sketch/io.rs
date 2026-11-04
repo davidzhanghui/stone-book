@@ -200,7 +200,7 @@ fn lz_decompress(length: usize, reset: u32, get: impl Fn(usize) -> u32) -> Optio
     let mut val = get(0);
     let mut position = reset;
     let mut index = 1usize;
-    let mut read = |n: u32, val: &mut u32, position: &mut u32, index: &mut usize| -> u32 {
+    let read = |n: u32, val: &mut u32, position: &mut u32, index: &mut usize| -> u32 {
         let mut bits = 0u32;
         let maxpower = 1u32 << n;
         let mut power = 1u32;

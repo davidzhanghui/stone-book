@@ -26,6 +26,7 @@ mod seed;
 mod settings;
 mod sheet;
 mod shortcuts;
+mod sketch;
 mod store;
 mod templates;
 mod text_area;
@@ -143,6 +144,7 @@ fn bind_keys(cx: &mut App) {
     line_input::bind_keys(cx);
     text_area::bind_keys(cx);
     board::view::bind_keys(cx);
+    sketch::view::bind_keys(cx);
     sheet::bind_keys(cx);
     base::editor::bind_keys(cx);
 }

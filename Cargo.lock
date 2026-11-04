@@ -6136,6 +6136,7 @@ dependencies = [
  "gpui",
  "image",
  "ironcalc",
+ "lyon_tessellation",
  "objc2",
  "objc2-app-kit",
  "objc2-av-foundation",

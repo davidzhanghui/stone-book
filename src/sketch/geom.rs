@@ -88,9 +88,6 @@ impl R {
     pub fn contains_r(&self, o: &R) -> bool {
         o.x0 >= self.x0 && o.x1 <= self.x1 && o.y0 >= self.y0 && o.y1 <= self.y1
     }
-    pub fn intersects(&self, o: &R) -> bool {
-        self.x0 <= o.x1 && o.x0 <= self.x1 && self.y0 <= o.y1 && o.y0 <= self.y1
-    }
 }
 
 pub fn center(e: &Element) -> V {
@@ -337,9 +334,7 @@ pub fn update_bound_arrows(doc: &mut SketchDoc, moved: &[String]) {
         .iter()
         .enumerate()
         .filter(|(_, e)| !e.is_deleted && e.is_linear())
-        .filter(|(_, e)| {
-            [true, false].iter().any(|s| e.binding(*s).is_some_and(|b| moved.is_empty() || moved.iter().any(|m| *m == b.element_id)))
-        })
+        .filter(|(_, e)| [true, false].iter().any(|s| e.binding(*s).is_some_and(|b| moved.is_empty() || moved.contains(&b.element_id))))
         .map(|(i, _)| i)
         .collect();
     for i in jobs {

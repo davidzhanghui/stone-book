@@ -6,7 +6,7 @@
 > Books kept in stone; water drawn into a channel.
 
 A local-only block editor, written in **Rust + [GPUI](https://github.com/zed-industries/zed)** (Zed's GPU UI framework) and drawn directly with Metal.
-The interface is its own: block editing, a `/` slash menu, a floating toolbar, and paste-from-web that keeps the formatting, plus three full-screen editors for boards, spreadsheets, and databases.
+The interface is its own: block editing, a `/` slash menu, a floating toolbar, and paste-from-web that keeps the formatting, plus four full-screen editors for boards, sketches, spreadsheets, and databases.
 No account, no cloud. Everything lives in one SQLite file on your machine (only link cards reach the network, and that can be turned off in Settings).
 
 ![logo](assets/logo-256.png)
@@ -22,6 +22,7 @@ No account, no cloud. Everything lives in one SQLite file on your machine (only 
 | Paste and export | Paste from the web and keep the formatting; copy writes both HTML and Markdown; import Markdown; export Markdown / HTML / PDF |
 | Diagrams and math | A built-in Mermaid-style renderer (flowchart, sequence, class, state, ER, Gantt, pie, mind map, timeline); KaTeX, block and inline |
 | Boards | Shapes, connectors, sticky notes, frames, swimlanes, freehand, mind maps, about 23,000 assets, 57 templates; Mermaid / PlantUML converted into editable shapes |
+| Sketches | Excalidraw-compatible hand-drawn whiteboard: bound arrows, text in shapes, frames; opens and saves `.excalidraw` / Obsidian files and pastes to and from excalidraw.com |
 | Spreadsheets | IronCalc formula engine (497 functions), conditional formatting, data validation, dropdowns, filter and sort, freeze panes, multiple sheets, xlsx / CSV |
 | Databases | 21 field types, formulas and relation lookups; table / kanban / gallery / Gantt / calendar / form; virtual scrolling in both directions, tested at 100,000 rows |
 | Rich blocks | Link cards, video, file attachments (preview for code / PDF / Office / audio / archives), HTML blocks, countdowns, buttons, timelines |
@@ -119,6 +120,7 @@ Design notes:
 | `src/convert.rs` | HTML / Markdown import and export (paste-from-web) |
 | `src/canvas/`, `src/diagram/` | 2D scene graph and painting; Mermaid / PlantUML parsing and layered layout |
 | `src/board/` | Board, flowchart, and mind-map model plus the full-screen editor |
+| `src/sketch/` | Excalidraw-compatible sketch: the official `.excalidraw` model, hand-drawn renderer, import/export, and the full-screen editor |
 | `src/sheet/` | Spreadsheet UI (`commands`, `mouse`, `paint`; calculation is IronCalc) |
 | `src/base/` | Database: `model` data and undo, `db` row storage, `formula` / `calc`, `editor` / `chrome` |
 | `src/highlight.rs` | Syntax highlighting shared by code blocks, text boxes, and attachment preview |

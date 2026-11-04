@@ -5,6 +5,7 @@
 //! - `ui.rs`：工具栏、属性面板、菜单、缩放栏
 
 use super::geom::{self, v, R, V};
+use super::model::Element;
 use super::model::*;
 use super::paint;
 use crate::canvas::paint::View;
@@ -165,6 +166,7 @@ pub enum Tool {
 }
 
 impl Tool {
+    #[cfg(feature = "dev")]
     pub fn parse(s: &str) -> Option<Tool> {
         Some(match s {
             "select" => Tool::Select,
@@ -345,10 +347,6 @@ impl SketchEditor {
         }
     }
 
-    pub(super) fn dark(cx: &App) -> bool {
-        theme(cx).dark
-    }
-
     pub(super) fn view(&self) -> View {
         View { origin: point(self.canvas_bounds.origin.x + px(self.offset.x), self.canvas_bounds.origin.y + px(self.offset.y)), scale: self.zoom }
     }
@@ -506,8 +504,9 @@ impl SketchEditor {
                 self.offset = pt(vw / 2. - c.x as f32 * self.zoom, vh / 2. - c.y as f32 * self.zoom);
             }
             None => {
+                // 空画布：原点放在左上三分之一处，新画的内容不会挤到右下角
                 self.zoom = 1.;
-                self.offset = pt(vw / 2., vh / 2.);
+                self.offset = pt(vw * 0.3, vh * 0.3);
             }
         }
     }
@@ -617,7 +616,7 @@ impl Overlay {
 }
 
 impl Render for SketchEditor {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = theme(cx).clone();
         let dark = t.dark;
         let doc = Arc::new(self.doc.clone());
@@ -756,12 +755,18 @@ impl Render for SketchEditor {
                                     let (w, h) = (f32::from(bounds.size.width), f32::from(bounds.size.height));
                                     let mut x = offset.x.rem_euclid(step);
                                     while x < w {
-                                        window.paint_quad(fill(Bounds::new(point(bounds.origin.x + px(x), bounds.origin.y), size(px(1.), bounds.size.height)), grid_col));
+                                        window.paint_quad(fill(
+                                            Bounds::new(point(bounds.origin.x + px(x), bounds.origin.y), size(px(1.), bounds.size.height)),
+                                            grid_col,
+                                        ));
                                         x += step;
                                     }
                                     let mut y = offset.y.rem_euclid(step);
                                     while y < h {
-                                        window.paint_quad(fill(Bounds::new(point(bounds.origin.x, bounds.origin.y + px(y)), size(bounds.size.width, px(1.))), grid_col));
+                                        window.paint_quad(fill(
+                                            Bounds::new(point(bounds.origin.x, bounds.origin.y + px(y)), size(bounds.size.width, px(1.))),
+                                            grid_col,
+                                        ));
                                         y += step;
                                     }
                                 }
@@ -790,7 +795,12 @@ impl Render for SketchEditor {
                             .gap(px(10.))
                             .text_color(t.text_muted)
                             .child(div().text_size(px(18.)).child("选择工具开始画，或双击写字"))
-                            .child(div().text_size(px(12.5)).opacity(0.85).child("R 矩形 · D 菱形 · O 椭圆 · A 箭头 · L 直线 · P 画笔 · T 文本 · I 图片 · F 框架 · E 橡皮"))
+                            .child(
+                                div()
+                                    .text_size(px(12.5))
+                                    .opacity(0.85)
+                                    .child("R 矩形 · D 菱形 · O 椭圆 · A 箭头 · L 直线 · P 画笔 · T 文本 · I 图片 · F 框架 · E 橡皮"),
+                            )
                             .child(div().text_size(px(12.5)).opacity(0.85).child("⌘O 打开 .excalidraw · ⌘V 粘贴官网复制的图形")),
                     ),
                 )

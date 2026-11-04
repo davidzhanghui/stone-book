@@ -38,6 +38,8 @@ objc2-core-foundation = { version = "0.3", features = ["CFString", "CFLocale", "
 core-video = "=0.4.3"
 ureq = "3"
 roughr = "0.14"
+# 草图：自由画 / 线条圆头圆角（与 GPUI 内部的 lyon 同一版本）
+lyon_tessellation = "1.0"
 rstar = "0.12"
 resvg = "0.45"
 flate2 = "1"

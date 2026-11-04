@@ -476,6 +476,16 @@ fn exec(cmd: &str, arg: &str, ws: &Entity<Workspace>, window: &mut Window, cx: &
             }
         }
         "opensheet" => ws.update(cx, |w, cx| w.open_embed("sheet", if arg.is_empty() { "autotest-sheet" } else { arg }, window, cx)),
+        "opensketch" => {
+            let id = if arg.is_empty() { crate::objects::create("sketch", None) } else { arg.to_string() };
+            ws.update(cx, |w, cx| w.open_embed("sketch", &id, window, cx));
+        }
+        "sketch" => {
+            // sketch tool NAME | sketch drag X1 Y1 X2 Y2 [shift] | sketch click X Y [N] | sketch text X Y 文字 | sketch key NAME | sketch dump | sketch open PATH
+            if let Some(s) = ws.read(cx).sketch_view() {
+                s.update(cx, |s, cx| s.test_cmd(arg, window, cx));
+            }
+        }
         "openboard" => ws.update(cx, |w, cx| w.open_embed("board", if arg.is_empty() { "autotest-board" } else { arg }, window, cx)),
         "boardedit" => {
             if let Some(b) = ws.read(cx).board_view() {

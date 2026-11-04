@@ -110,7 +110,8 @@ pub fn paint_prims(prims: &[Prim], xf: &Xf, view: &View, window: &mut Window, cx
 /// 画整张草图（编辑器与文档内预览共用）。hide：正在编辑文字的元素不画。
 pub fn paint_doc(doc: &SketchDoc, view: View, clip: Bounds<Pixels>, dark: bool, hide: Option<&str>, erase: &[String], window: &mut Window, cx: &mut App) {
     // 框架里的元素按框架裁剪
-    let frames: std::collections::HashMap<&str, R> = doc.live().filter(|e| e.is_frame()).map(|e| (e.id.as_str(), R::xywh(e.x, e.y, e.width, e.height))).collect();
+    let frames: std::collections::HashMap<&str, R> =
+        doc.live().filter(|e| e.is_frame()).map(|e| (e.id.as_str(), R::xywh(e.x, e.y, e.width, e.height))).collect();
     for e in doc.live() {
         if hide == Some(e.id.as_str()) {
             continue;
@@ -122,8 +123,8 @@ pub fn paint_doc(doc: &SketchDoc, view: View, clip: Bounds<Pixels>, dark: bool, 
         }
         let prims = cached(doc, e, dark);
         let xf = Xf::of(e);
-        let faded = erase.iter().any(|x| *x == e.id);
-        let mut draw = |window: &mut Window, cx: &mut App| {
+        let faded = erase.contains(&e.id);
+        let draw = |window: &mut Window, cx: &mut App| {
             if faded {
                 let ghost: Vec<Prim> = prims.iter().cloned().map(|p| fade(p, 0.25)).collect();
                 paint_prims(&ghost, &xf, &view, window, cx);
@@ -146,7 +147,9 @@ fn fade(p: Prim, k: f32) -> Prim {
     match p {
         Prim::Fill { cmds, color } => Prim::Fill { cmds, color: f(color) },
         Prim::Stroke { cmds, color, width, dash, round } => Prim::Stroke { cmds, color: f(color), width, dash, round },
-        Prim::Text { lines, x, y, w, size, line_h, color, family, align, bg } => Prim::Text { lines, x, y, w, size, line_h, color: f(color), family, align, bg: bg.map(f) },
+        Prim::Text { lines, x, y, w, size, line_h, color, family, align, bg } => {
+            Prim::Text { lines, x, y, w, size, line_h, color: f(color), family, align, bg: bg.map(f) }
+        }
         other => other,
     }
 }

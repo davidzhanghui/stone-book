@@ -144,6 +144,13 @@ impl Workspace {
                 window.focus(&fh);
                 self.embed = Some((v.into(), fh, sub));
             }
+            "sketch" => {
+                let v = cx.new(|cx| crate::sketch::view::SketchEditor::new(id.to_string(), cx));
+                let sub = cx.subscribe_in(&v, window, |this, _, _: &crate::sketch::view::SketchEvent, window, cx| this.close_embed(window, cx));
+                let fh = v.focus_handle(cx);
+                window.focus(&fh);
+                self.embed = Some((v.into(), fh, sub));
+            }
             "sheet" => {
                 let v = cx.new(|cx| crate::sheet::SheetEditor::new(id.to_string(), window, cx));
                 let sub = cx.subscribe_in(&v, window, |this, _, _: &crate::sheet::SheetEvent, window, cx| this.close_embed(window, cx));
@@ -190,6 +197,11 @@ impl Workspace {
     #[cfg(feature = "dev")]
     pub fn board_view(&self) -> Option<Entity<crate::board::view::BoardEditor>> {
         self.embed.as_ref().and_then(|e| e.0.clone().downcast::<crate::board::view::BoardEditor>().ok())
+    }
+
+    #[cfg(feature = "dev")]
+    pub fn sketch_view(&self) -> Option<Entity<crate::sketch::view::SketchEditor>> {
+        self.embed.as_ref().and_then(|e| e.0.clone().downcast::<crate::sketch::view::SketchEditor>().ok())
     }
 
     pub fn embed_view(&self) -> Option<AnyView> {

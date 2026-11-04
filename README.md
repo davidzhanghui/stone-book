@@ -5,7 +5,7 @@
 > 藏书于石，引水成渠。
 
 纯本地的块级文档编辑器，用 **Rust + [GPUI](https://github.com/zed-industries/zed)**（Zed 的 GPU UI 框架）编写，Metal 直接绘制。
-交互与界面自成一体：块编辑、`/` 斜杠菜单、浮动工具栏、网页粘贴即还原，外加画板、电子表格、多维表格三个全屏编辑器。
+交互与界面自成一体：块编辑、`/` 斜杠菜单、浮动工具栏、网页粘贴即还原，外加画板、草图、电子表格、多维表格四个全屏编辑器。
 没有账号、没有云端，数据只在本机一个 SQLite 文件里（只有「网页卡片」会按需联网，可在设置中关闭）。
 
 ![logo](assets/logo-256.png)
@@ -21,6 +21,7 @@
 | 粘贴与导出 | 从网页粘贴还原格式；复制同时写出 HTML + Markdown；导入 Markdown，导出 Markdown / HTML / PDF |
 | 图表与公式 | 自研 Mermaid 风格渲染器（流程、时序、类、状态、ER、甘特、饼图、思维导图、时间线）；KaTeX 块级与行内公式 |
 | 画板 | 图形、连线、便签、分区、泳道、画笔、思维导图、约 2.3 万个素材、57 个模板；Mermaid / PlantUML 转可编辑图形 |
+| 草图 | Excalidraw 兼容的手绘白板：箭头绑定、容器文字、框架；`.excalidraw` / Obsidian 文件与官网剪贴板双向互通 |
 | 电子表格 | IronCalc 公式引擎（497 个函数）、条件格式、数据验证、下拉列表、筛选排序、冻结、多工作表、xlsx / CSV |
 | 多维表格 | 21 种字段、公式与关联引用；表格 / 看板 / 画册 / 甘特 / 日历 / 表单六种视图；行列双向虚拟滚动，附 10 万行压测 |
 | 富内容 | 网页卡片、视频、文件附件（代码 / PDF / Office / 音频 / 压缩包预览）、HTML 块、倒计时、按钮、时间轴 |
@@ -118,6 +119,7 @@ flowchart TB
 | `src/convert.rs` | HTML / Markdown 导入导出（网页粘贴还原） |
 | `src/canvas/`、`src/diagram/` | 2D 场景图与绘制；Mermaid / PlantUML 解析与分层布局 |
 | `src/board/` | 画板 / 流程图 / 思维导图的模型与全屏编辑器 |
+| `src/sketch/` | 草图（Excalidraw 兼容）：官方 `.excalidraw` 模型、手绘渲染、导入导出与全屏编辑器 |
 | `src/sheet/` | 电子表格界面（`commands` 命令分发、`mouse` 鼠标交互、`paint` 绘制；计算由 IronCalc 完成） |
 | `src/base/` | 多维表格：`model` 数据与撤销、`db` 逐行存储、`formula` / `calc` 公式与视图计算、`editor` / `chrome` 界面 |
 | `src/highlight.rs` | 代码高亮（代码块、文本框、附件预览共用） |
