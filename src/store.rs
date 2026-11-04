@@ -1,4 +1,4 @@
-//! 本地存储：SQLite（~/Library/Application Support/Stonebrook/stonebrook.db）。
+//! 本地存储：SQLite（~/Stonebrook/stonebrook.db）。
 //! 文档内容以 JSON 存一列，另存一份纯文本用于全文搜索。
 //!
 //! 写入模型：所有写操作都进同一个后台写线程的有序队列（单写者，顺序与提交顺序一致）。
@@ -20,6 +20,10 @@ pub const APP_NAME_EN: &str = "Stonebrook";
 pub const DATA_DIR_NAME: &str = "Stonebrook";
 pub const DB_FILE: &str = "stonebrook.db";
 pub const DATA_DIR_ENV: &str = "STONEBROOK_DATA_DIR";
+
+/// 测试里改 `STONEBROOK_DATA_DIR`（进程级环境变量）前先拿这把锁，避免并行的测试互相覆盖。
+#[cfg(test)]
+pub static TEST_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[derive(Clone, Debug)]
 pub struct DocMeta {
@@ -95,12 +99,12 @@ pub fn new_uuid() -> String {
     uuid::Uuid::new_v4().simple().to_string()
 }
 
-/// 数据目录：默认 ~/Library/Application Support/Stonebrook，可用 STONEBROOK_DATA_DIR 覆盖。
+/// 数据目录：默认 ~/Stonebrook，可用 STONEBROOK_DATA_DIR 覆盖。
 pub fn data_dir() -> PathBuf {
     if let Some(dir) = std::env::var_os(DATA_DIR_ENV) {
         return PathBuf::from(dir);
     }
-    dirs::data_dir().unwrap_or_else(|| PathBuf::from(".")).join(DATA_DIR_NAME)
+    dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).join(DATA_DIR_NAME)
 }
 
 static GLOBAL: OnceLock<Store> = OnceLock::new();

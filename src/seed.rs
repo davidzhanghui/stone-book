@@ -88,7 +88,7 @@ $$
 
 文字的格式可以很丰富：**粗体**、*Italic*、<u>下划线</u>、~~删除线~~、`行内代码`、[链接](https://github.com/zed-industries/zed)。
 
-> 所有数据保存在 `~/Library/Application Support/Stonebrook/`，SQLite 单文件，随时可以备份带走。
+> 所有数据保存在 `~/Stonebrook/`，SQLite 单文件，随时可以备份带走。
 "#;
 
 pub fn welcome() -> DocContent {

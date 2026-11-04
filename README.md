@@ -1,5 +1,7 @@
 # 石渠 Stonebrook
 
+[English](README.en.md)
+
 > 藏书于石，引水成渠。
 
 纯本地的块级文档编辑器，用 **Rust + [GPUI](https://github.com/zed-industries/zed)**（Zed 的 GPU UI 框架）编写，Metal 直接绘制。
@@ -8,7 +10,7 @@
 
 ![logo](assets/logo-256.png)
 
-- 版本 **2.0.0**，仅支持 macOS 12+（依赖 AppKit、WKWebView、AVFoundation）
+- 版本 **2.1.0**，仅支持 macOS 12+（依赖 AppKit、WKWebView、AVFoundation）
 - 完整功能清单：[docs/FEATURES.md](docs/FEATURES.md)
 
 ## 能做什么
@@ -48,7 +50,7 @@ scripts/build.sh --fast --run  # 跳过检查只打包，并启动（已运行�
 
 ## 数据与可靠性
 
-- **位置**：`~/Library/Application Support/Stonebrook/`（环境变量 `STONEBROOK_DATA_DIR` 可覆盖）：`stonebrook.db` + `assets/` 资源目录，复制即备份。
+- **位置**：`~/Stonebrook/`（环境变量 `STONEBROOK_DATA_DIR` 可覆盖）：`stonebrook.db` + `assets/` 资源目录，复制即备份。
 - **完整备份 / 恢复**：「文件 → 导出完整备份…」（或 `···` 菜单、命令面板）打包 `stonebrook.db` 快照 + `assets/` 为一个 zip；「从备份恢复…」校验后暂存，**重启后生效**，原数据移到 `recovery/pre-restore-<时间>/`，不会删除。换机器（用户名 / 目录不同）时文档、画板、多维表格里的图片路径自动改写；电子表格单元格里的图片需路径一致才能显示。
 - **写入**：所有写操作进同一个后台写线程，按提交顺序执行；文档与嵌入对象的保存按 key 合并，只写最新快照。界面线程用另一条只读连接（WAL 模式下读写互不阻塞）。退出、关窗口前等写队列清空。
 - **失败可见**：写库失败会在界面顶部提示原因，不会静默丢数据。

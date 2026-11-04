@@ -728,6 +728,45 @@ impl BaseEditor {
         });
     }
 
+    /// 在 `parent` 下新建一条子记录：父记录折叠时先展开，新记录选中主字段。超出层级上限时撤回并提示。
+    pub(super) fn add_child_record(&mut self, parent: &str, cx: &mut Context<Self>) {
+        let tid = self.tid.clone();
+        let Some(r) = self.bm().new_record(&tid, None) else { return };
+        let res = self.bm().set_parent(&tid, &r.id, Some(parent));
+        match res {
+            Ok(()) => {
+                let k = format!("t:{parent}");
+                let mut v = self.view();
+                v.collapsed.retain(|x| x != &k);
+                self.bm().put_view(&tid, v);
+                self.commit(cx);
+                let fid = self.gl.cols.first().cloned().unwrap_or_default();
+                self.sel = Some(super::editor::Sel { rid: r.id.clone(), fid: fid.clone(), arid: r.id, afid: fid });
+            }
+            Err(e) => {
+                self.bm().del_record(&tid, &r.id);
+                self.commit(cx);
+                self.show_toast(&e, cx);
+            }
+        }
+    }
+
+    /// 开启层级时各记录的直接子记录数（只统计父记录仍存在的）。
+    fn child_counts(&self) -> std::collections::HashMap<String, usize> {
+        let mut out = std::collections::HashMap::new();
+        let b = self.b();
+        let Some(t) = b.table(&self.tid) else { return out };
+        if t.meta.parent_field.is_none() {
+            return out;
+        }
+        for rid in t.records.keys() {
+            if let Some(p) = b.parent_of(&self.tid, rid) {
+                *out.entry(p).or_insert(0) += 1;
+            }
+        }
+        out
+    }
+
     fn header_cell(&mut self, f: &Field, i: usize, w: f32, t: &Theme, cx: &mut Context<Self>) -> AnyElement {
         let (fid, fid2, fid3) = (f.id.clone(), f.id.clone(), f.id.clone());
         let v = self.view();
@@ -824,6 +863,8 @@ impl BaseEditor {
         let any_checked = !checked.is_empty();
         let comments = self.comment_counts.clone();
         let collapsed_tree = v.collapsed.clone();
+        let hier = self.b().table(&self.tid).is_some_and(|t| t.meta.parent_field.is_some());
+        let child_counts = self.child_counts();
         let entity = cx.entity();
         let mut layer = div().absolute().inset_0();
         for i in r0..r1 {
@@ -957,12 +998,71 @@ impl BaseEditor {
                                     }),
                                 )
                         });
+                        // 主字段右侧：悬停显示「+ 添加子记录」，有子记录时常驻显示子记录数
+                        let kid_n = child_counts.get(&rid).copied().unwrap_or(0);
+                        let tree_tools = (ci == 0 && hier && matched).then(|| {
+                            let r_add = rid.clone();
+                            div()
+                                .absolute()
+                                .top_0()
+                                .right(px(4.))
+                                .h_full()
+                                .flex()
+                                .flex_row()
+                                .when(tall, |d| d.items_start().pt(px(6.)))
+                                .when(!tall, |d| d.items_center())
+                                .child(
+                                    div()
+                                        .flex()
+                                        .flex_row()
+                                        .items_center()
+                                        .gap(px(2.))
+                                        .pl(px(4.))
+                                        .child(
+                                            div()
+                                                .id(SharedString::from(format!("addkid-{rid}")))
+                                                .size(px(20.))
+                                                .flex()
+                                                .items_center()
+                                                .justify_center()
+                                                .rounded(px(4.))
+                                                .invisible()
+                                                .group_hover("grow", |s| s.visible())
+                                                .cursor_pointer()
+                                                .hover(|s| s.bg(t.hover))
+                                                .child(icon("plus", 13., t.text_secondary))
+                                                .on_mouse_down(
+                                                    MouseButton::Left,
+                                                    cx.listener(move |this, _, _, cx| {
+                                                        cx.stop_propagation();
+                                                        this.add_child_record(&r_add, cx);
+                                                    }),
+                                                ),
+                                        )
+                                        .when(kid_n > 0, |d| {
+                                            d.child(div().w(px(1.)).h(px(12.)).bg(t.border).invisible().group_hover("grow", |s| s.visible())).child(
+                                                div()
+                                                    .flex()
+                                                    .flex_row()
+                                                    .items_center()
+                                                    .gap(px(2.))
+                                                    .px(px(4.))
+                                                    .text_size(px(12.))
+                                                    .text_color(t.text_muted)
+                                                    .child(icon("list-tree", 12., t.text_muted))
+                                                    .child(kid_n.to_string()),
+                                            )
+                                        }),
+                                )
+                        });
                         div()
                             .w(px(w))
                             .h_full()
                             .flex_none()
                             .px(px(8.))
-                            .when(ci == 0, |d| d.pl(px(8. + depth as f32 * 20. + tdepth as f32 * 18.)))
+                            .when(ci == 0, |d| d.relative().pl(px(8. + depth as f32 * 20. + tdepth as f32 * 18.)))
+                            // 给右侧的「+ / 子记录数」留位置，长文字在它前面截断
+                            .when(tree_tools.is_some(), |d| d.pr(px(if kid_n > 0 { 64. } else { 30. })))
                             .when_some(fill, |d, c| d.bg(c))
                             .when(!matched, |d| d.opacity(0.55))
                             .children(caret)
@@ -977,6 +1077,7 @@ impl BaseEditor {
                             .text_size(px(13.))
                             .when(in_sel, |d| d.bg(t.accent.opacity(0.08)))
                             .child(content)
+                            .children(tree_tools)
                             .on_mouse_down(MouseButton::Left, cx.listener(move |this, ev: &MouseDownEvent, w, cx| this.cell_down(&r1, &f1, ev, w, cx)))
                             .on_mouse_move(cx.listener(move |this, ev: &MouseMoveEvent, _, cx| {
                                 if matches!(this.drag, Some(Drag::Select)) && ev.pressed_button == Some(MouseButton::Left) {

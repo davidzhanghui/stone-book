@@ -1274,26 +1274,7 @@ impl BaseEditor {
             .when(hier, |d| {
                 d.child(menu_item("rm-child", Some("list-tree"), "添加子记录", t).on_click(cx.listener(move |this, _, _, cx| {
                     this.close_popups();
-                    let tid = this.tid.clone();
-                    let Some(r) = this.bm().new_record(&tid, None) else { return };
-                    let res = this.bm().set_parent(&tid, &r.id, Some(&r5));
-                    match res {
-                        Ok(()) => {
-                            // 父记录如果是折叠的，展开它
-                            let k = format!("t:{r5}");
-                            let mut v = this.view();
-                            v.collapsed.retain(|x| x != &k);
-                            this.bm().put_view(&tid, v);
-                            this.commit(cx);
-                            let fid = this.gl.cols.first().cloned().unwrap_or_default();
-                            this.sel = Some(super::editor::Sel { rid: r.id.clone(), fid: fid.clone(), arid: r.id, afid: fid });
-                        }
-                        Err(e) => {
-                            this.bm().del_record(&tid, &r.id);
-                            this.commit(cx);
-                            this.show_toast(&e, cx);
-                        }
-                    }
+                    this.add_child_record(&r5, cx);
                 })))
                 .when(parent.is_some(), |d| {
                     let g = grand.clone();

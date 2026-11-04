@@ -257,6 +257,7 @@ mod tests {
     /// 导出 → 暂存 → 换入，且 assets 路径变化时文档里的旧路径被改写；旧数据保留在 recovery/。
     #[test]
     fn export_stage_apply_roundtrip() {
+        let _env = crate::store::TEST_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let root = std::env::temp_dir().join(format!("stonebrook-rt-{}", crate::store::new_uuid()));
         let src = root.join("src");
         let dst = root.join("dst");

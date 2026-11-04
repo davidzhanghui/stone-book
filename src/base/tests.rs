@@ -564,6 +564,7 @@ fn text_to_value_rules() {
 
 #[test]
 fn persist_roundtrip_through_sqlite() {
+    let _env = crate::store::TEST_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let dir = std::env::temp_dir().join(format!("stonebrook-base-test-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::env::set_var(crate::store::DATA_DIR_ENV, &dir);
