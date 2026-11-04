@@ -1,0 +1,6 @@
+target/
+dist/
+assets/AppIcon.iconset/
+.DS_Store
+image.png
+*.log

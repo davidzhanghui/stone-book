@@ -1,0 +1,71 @@
+[package]
+name = "stonebrook"
+version = "2.0.0"
+edition = "2021"
+license = "MIT"
+description = "石渠 Stonebrook — 本地块级文档编辑器"
+
+[features]
+# 开发用：脚本驱动的端到端测试（STONEBROOK_SCRIPT）、压测数据生成与菜单入口。
+# 默认开启；正式打包用 --no-default-features 剔除（见 scripts/build.sh）。
+default = ["dev"]
+dev = []
+
+[dependencies]
+gpui = { version = "=0.2.2", default-features = false, features = ["font-kit", "runtime_shaders"] }
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.32", features = ["bundled"] }
+uuid = { version = "1", features = ["v4"] }
+dirs = "5"
+pulldown-cmark = { version = "0.12", default-features = false }
+scraper = "0.20"
+base64 = "0.22"
+image = { version = "0.25", default-features = false, features = ["png", "tiff", "jpeg"] }
+unicode-segmentation = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+objc2 = "0.6"
+block2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSString", "NSProcessInfo", "NSArray", "NSData", "NSURL", "NSError", "NSDictionary", "NSValue", "NSGeometry", "NSObject", "NSEnumerator", "NSKeyValueCoding", "NSURLRequest", "NSValue", "block2"] }
+objc2-app-kit = { version = "0.3", features = ["NSPasteboard", "NSEvent", "NSView", "NSWindow", "NSResponder", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSGraphics", "NSWorkspace", "NSApplication", "NSRunningApplication", "NSGraphicsContext", "NSPrintOperation", "NSPrintInfo", "objc2-core-foundation", "objc2-core-graphics", "block2"] }
+objc2-web-kit = { version = "0.3", features = ["WKWebView", "WKWebViewConfiguration", "WKPreferences", "WKWebpagePreferences", "WKSnapshotConfiguration", "WKNavigation", "WKPDFConfiguration", "WKFrameInfo", "objc2-app-kit", "block2"] }
+objc2-av-foundation = { version = "0.3", features = ["AVPlayer", "AVPlayerItem", "AVPlayerItemOutput", "AVAsset", "AVAssetImageGenerator", "AVTime", "objc2-core-foundation", "objc2-core-media", "objc2-core-video", "objc2-core-graphics", "block2"] }
+objc2-core-media = { version = "0.3", features = ["CMTime", "CMTimeRange"] }
+objc2-core-video = { version = "0.3", features = ["CVPixelBuffer", "CVImageBuffer", "CVBuffer", "CVReturn", "objc2-core-graphics"] }
+objc2-core-graphics = { version = "0.3", features = ["CGImage", "CGWindow"] }
+objc2-core-foundation = { version = "0.3", features = ["CFString", "CFLocale", "CFStringTokenizer", "CFBase", "CFCGTypes", "CFArray"] }
+core-video = "=0.4.3"
+ureq = "3"
+roughr = "0.14"
+rstar = "0.12"
+resvg = "0.45"
+flate2 = "1"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+ironcalc = "0.9"
+raw-window-handle = "0.6"
+encoding_rs = "0.8"
+smallvec = "1"
+regex = "1"
+core-foundation = "0.10"
+core-foundation-sys = "0.8"
+symphonia = { version = "0.5", features = ["mp3", "aac", "isomp4", "alac"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 4
+strip = true
+
+[profile.dev.package."*"]
+opt-level = 2
+
+# 本地 vendored GPUI 0.2.2，改动均标注 [stonebrook patch]：
+# - STONEBROOK_FORCE_DRAW 环境变量控制的绘制开关（vendor/gpui/src/platform/mac/window.rs）
+# - 网格按权重分配列宽 `grid_col_weights`（表格列宽拖动用；style.rs / styled.rs / taffy.rs）
+# 本地 vendored ironcalc_base 0.9.1，改动标注 [stonebrook patch]：
+# - UserModel 的应用扩展数据 `ext`（get_ext / set_ext，进入撤销历史）
+# - 批量修改 begin_batch / end_batch：多次修改合并为一个撤销步骤
+[patch.crates-io]
+gpui = { path = "vendor/gpui" }
+ironcalc_base = { path = "vendor/ironcalc_base" }
