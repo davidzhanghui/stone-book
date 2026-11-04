@@ -1,16 +1,23 @@
 #!/usr/bin/env python3
 """生成画板「素材」面板的图标素材包（assets/iconlib/*.json.z）。
 
-素材来源（均为可商用的开源许可）：
-  - IconPark       Apache-2.0  npm @iconify-json/icon-park-outline + IconPark source/icons.json（中文名 / 分类 / 标签）
-  - Tabler Icons   MIT                 npm @iconify-json/tabler + @tabler/icons（分类 / 标签）
-  - Fluent Emoji   微软      MIT       npm @iconify-json/fluent-emoji-flat + cldr-annotations-full（中文名）+ unicode.org emoji-test.txt（排序）
-  - 技术图标 logos  CC0-1.0             npm @iconify-json/logos（商标归各自所有者）
-  - 用户头像        CC0-1.0             DiceBear notionists / lorelei / open-peeps（avatars.js 离线生成）
+素材来源（均为可商用的开源许可，全文见 assets/iconlib/THIRD_PARTY_LICENSES.txt）：
+  - IconPark       Apache-2.0  npm @iconify-json/icon-park-outline / -solid / -twotone + IconPark source/icons.json（中文名 / 分类 / 标签）
+  - Tabler Icons   MIT         npm @iconify-json/tabler + @tabler/icons（分类 / 标签；线框、实心各一个包）
+  - Phosphor       MIT         npm @iconify-json/ph + @phosphor-icons/core（分类 / 标签；只收 fill、duotone）
+  - TDesign        MIT         npm @iconify-json/tdesign + tdesign-icons-view（中文分类 / 中文关键词）
+  - Fluent 图标    MIT         npm @iconify-json/fluent（Fluent UI System Icons，只收 24px filled）
+  - Carbon         Apache-2.0  npm @iconify-json/carbon（只挑架构 / 数据 / 流程类，不收 IBM 产品图标）
+  - 品牌图标        CC0-1.0     npm @iconify-json/simple-icons（精选，商标归各自所有者）
+  - 国旗与地区旗    MIT         npm @iconify-json/circle-flags + cldr-localenames-full / cldr-core（中文名 / 大洲）
+  - Fluent Emoji   MIT         npm @iconify-json/fluent-emoji-flat + cldr-annotations-full（中文名）+ unicode.org emoji-test.txt（排序）
+  - 技术图标 logos  CC0-1.0     npm @iconify-json/logos（商标归各自所有者）
+  - 用户头像        CC0-1.0     DiceBear notionists / lorelei / open-peeps（avatars.js 离线生成）
   - 项目管理        本项目自绘
 
-用法（先下载、解包到 SRC 目录，目录结构见 SRC_* 常量）：
-  python3 scripts/iconlib/gen.py <SRC 目录> <avatars.json>
+用法（先把 npm 包 `npm pack` 下载、解包到 SRC 目录，目录名去掉版本号，见 LICENSES.md「重新生成」）：
+  python3 scripts/iconlib/gen.py <SRC 目录> <avatars.json | -> [素材集 id ...]
+不写素材集 id 时全部重新生成；写了只生成这几个（例如 `gen.py src - flags brands`，用不到头像时第二个参数传 `-`）。
 """
 
 import json
@@ -22,6 +29,7 @@ from pathlib import Path
 
 SRC = Path(sys.argv[1])
 AVATARS = Path(sys.argv[2])
+ONLY = set(sys.argv[3:])
 OUT = Path(__file__).resolve().parents[2] / "assets" / "iconlib"
 
 
@@ -42,10 +50,33 @@ PREVIEW = {
               "clapping-hands folded-hands red-heart fire party-popper rocket light-bulb check-mark-button",
     "logos": "aws docker kubernetes mysql redis kafka nginx postgresql mongodb java python go react vue github spring",
     "avatar": " ".join(f"{s}-{i}" for i in range(1, 7) for s in ("notionists", "lorelei", "open-peeps")),
+    "park-solid": "user peoples home setting-two search like star message mail phone-telephone calendar alarm-clock folder-open file-text chart-line cloud-storage",
+    "park-twotone": "user peoples home setting-two search like star message mail phone-telephone calendar alarm-clock folder-open file-text chart-line cloud-storage",
+    "tabler-filled": " ".join(f"{n}-filled" for n in "user home settings search heart star message mail phone calendar clock folder file-text chart-pie cloud lock".split()),
+    "ph-fill": " ".join(f"{n}-fill" for n in "user users house gear magnifying-glass heart star chat-circle envelope phone calendar clock folder file-text chart-bar cloud database lock".split()),
+    "ph-duotone": " ".join(f"{n}-duotone" for n in "user users house gear magnifying-glass heart star chat-circle envelope phone calendar clock folder file-text chart-bar cloud database lock".split()),
+    "tdesign": "user home setting search heart star chat mail call calendar time folder file chart cloud lock",
+    "fluentui": "person people home settings search heart star chat mail call calendar clock folder document data-pie cloud database lock-closed",
+    "carbon": "cloud server-proxy virtual-machine kubernetes container-services data-base data-center gateway-api firewall network-3 api flow-data ai-agent bpmn-task decision-tree edge-node",
+    "brands": "wechat qq alipay bilibili zhihu xiaohongshu tiktok huawei xiaomi apple google microsoft amazon youtube netflix spotify",
+    "flags": "cn hk mo us gb fr de jp kr ru in ca au br sg european-union",
 }
 
 
+def wanted(pid):
+    return not ONLY or pid in ONLY
+
+
+def scope_ids(body, prefix):
+    """给 SVG 里的 id 加前缀：不同图标的 mask / clipPath / 渐变 id 会重名，导出成一张 SVG 时会互相干扰。"""
+    body = re.sub(r'id="([^"]+)"', lambda x: f'id="{prefix}-{x[1]}"', body)
+    body = re.sub(r"url\(#([^)]+)\)", lambda x: f"url(#{prefix}-{x[1]})", body)
+    return re.sub(r'href="#([^"]+)"', lambda x: f'href="#{prefix}-{x[1]}"', body)
+
+
 def write(pack):
+    if not wanted(pack["id"]):
+        return
     names = {i["n"] for c in pack["cats"] for i in c["icons"]}
     pack["preview"] = [n for n in PREVIEW.get(pack["id"], "").split() if n in names]
     n = sum(len(c["icons"]) for c in pack["cats"])
@@ -65,12 +96,15 @@ def icon(n, t, k, body, w, h, dw, dh, color=None):
 
 
 # ---------------------------------------------------------------- IconPark
+PARK_ORDER = ["Base", "Edit", "Office", "Arrows", "Charts", "Datas", "Hardware", "Connect", "Communicate", "Operate", "Safe", "Money", "Time", "Travel", "Build",
+              "Peoples", "Character", "Hands", "Emoji", "Health", "Life", "Foods", "Clothes", "Makeups", "Baby", "Animals", "Sports", "Game", "Music", "Weather",
+              "Energy", "Industry", "Measurement", "Graphics", "Components", "Abstract", "Brand", "Constellation", "Others"]
+
+
 def gen_park(zh_words):
     j, _ = iconify("icon-park-outline")
     meta = json.loads((SRC / "iconpark-icons.json").read_text())
-    order = ["Base", "Edit", "Office", "Arrows", "Charts", "Datas", "Hardware", "Connect", "Communicate", "Operate", "Safe", "Money", "Time", "Travel", "Build",
-             "Peoples", "Character", "Hands", "Emoji", "Health", "Life", "Foods", "Clothes", "Makeups", "Baby", "Animals", "Sports", "Game", "Music", "Weather",
-             "Energy", "Industry", "Measurement", "Graphics", "Components", "Abstract", "Brand", "Constellation", "Others"]
+    order = PARK_ORDER
     cats, cn = {}, {}
     for m in meta:
         name = m["name"]
@@ -97,6 +131,33 @@ TABLER_CN = [
     ("Sport", "运动"), ("Food", "食物"), ("Nature", "自然"), ("Animals", "动物"), ("Weather", "天气"), ("Mood", "心情"), ("Gestures", "手势"),
     ("Gender", "性别"), ("Games", "游戏"), ("Electrical", "电气"), ("Laundry", "洗涤标识"), ("Zodiac", "星座"), ("Extensions", "文件类型"), ("Brand", "品牌"),
 ]
+
+
+# IconPark 词表里没有、但 Phosphor / Fluent 常用的英文词
+ZH_EXTRA = {
+    "person": "用户 人物", "people": "人群 用户组", "house": "首页 房子", "gear": "设置 齿轮", "magnifying": "搜索", "glass": "玻璃", "envelope": "邮件 信封",
+    "chat": "聊天 消息", "document": "文档", "checkmark": "勾选 完成", "dismiss": "关闭 取消", "chevron": "箭头", "caret": "箭头", "trash": "删除 垃圾桶",
+    "pencil": "编辑 铅笔", "pen": "笔", "gauge": "仪表盘", "sparkle": "闪光 AI", "toolbox": "工具箱", "wrench": "扳手 工具", "bot": "机器人",
+    "globe": "地球 全球", "warning": "警告", "info": "信息", "question": "问题 帮助", "storage": "存储", "board": "看板", "flow": "流程",
+    "branch": "分支", "merge": "合并", "fork": "分叉", "plug": "插头 插件", "receipt": "收据 发票", "wallet": "钱包", "money": "钱 金额",
+    "cart": "购物车", "bag": "包 购物袋", "vehicle": "车辆", "bus": "公交车", "car": "汽车", "airplane": "飞机", "rocket": "火箭",
+}
+
+
+def seed_zh_words(zh_words):
+    """补充英文名 → 中文：TDesign 的中文关键词，再加 ZH_EXTRA（都不覆盖 IconPark 已有的）。"""
+    try:
+        man = tdesign_manifest()
+    except FileNotFoundError:
+        man = {}
+    for style in man.values():
+        for c in style.values():
+            for ic in c["icons"]:
+                kw = ic.get("keywords") or []
+                if kw and re.search("[\u4e00-\u9fff]", kw[0]):
+                    zh_words.setdefault(ic["name"], kw[0])
+    for en, zh in ZH_EXTRA.items():
+        zh_words.setdefault(en, zh)
 
 
 def zh_of(name, zh_words):
@@ -319,12 +380,318 @@ def gen_pm():
     write({"id": "pm", "title": "项目管理", "mono": False, "w": 24, "h": 24, "license": "本项目自绘", "url": "", "cats": out})
 
 
+# ---------------------------------------------------------------- IconPark 实心 / 双色
+def gen_park_style(variant, pid, title):
+    """IconPark 的另外两种主题：中文名 / 分类与线框版一致（来自 source/icons.json）。"""
+    j, _ = iconify(f"icon-park-{variant}")
+    meta = json.loads((SRC / "iconpark-icons.json").read_text())
+    cats, cn = {}, {}
+    for m in meta:
+        name = m["name"]
+        ic = j["icons"].get(name)
+        if not ic:
+            continue
+        cn[m["category"]] = m["categoryCN"]
+        w, h = size_of(j, ic)
+        keys = " ".join([name, *m.get("tag", [])])
+        cats.setdefault(m["category"], []).append(icon(name, m["title"], keys, scope_ids(ic["body"], f"{pid}-{name}"), w, h, 48, 48))
+    order = [c for c in PARK_ORDER if c in cats] + [c for c in cats if c not in PARK_ORDER]
+    write({"id": pid, "title": title, "mono": True, "w": 48, "h": 48, "license": "Apache-2.0 · ByteDance IconPark",
+           "url": "https://github.com/bytedance/IconPark", "cats": [{"name": cn[c], "icons": cats[c]} for c in order]})
+
+
+# ---------------------------------------------------------------- Tabler 实心
+def gen_tabler_filled(zh_words):
+    j, _ = iconify("tabler")
+    meta = json.loads((SRC / "tabler" / "package" / "icons.json").read_text())
+    cats = {}
+    for name, m in meta.items():
+        ic = j["icons"].get(f"{name}-filled")
+        if not ic or "filled" not in m.get("styles", {}):
+            continue
+        w, h = size_of(j, ic)
+        title, zh = zh_of(name, zh_words)
+        keys = " ".join([name, "filled 实心", *map(str, m.get("tags", [])), *zh])
+        cats.setdefault(m.get("category") or "", []).append(icon(f"{name}-filled", title or name, keys, ic["body"], w, h, 24, 24))
+    cn = dict(TABLER_CN)
+    out = [{"name": cn[c], "icons": cats[c]} for c, _ in TABLER_CN if c in cats]
+    if "" in cats:
+        out.append({"name": "其他", "icons": cats[""]})
+    write({"id": "tabler-filled", "title": "Tabler 实心", "mono": True, "w": 24, "h": 24, "license": "MIT · Tabler Icons", "url": "https://tabler.io/icons", "cats": out})
+
+
+# ---------------------------------------------------------------- 按英文名归类（给没有分类的图标库用）
+def tabler_classifier():
+    """用 Tabler 的「图标名 → 分类」推断：整名命中优先，其次首个单词、其余单词（取该词在 Tabler 里最常见的分类）。"""
+    meta = json.loads((SRC / "tabler" / "package" / "icons.json").read_text())
+    cn = dict(TABLER_CN)
+    full, word = {}, {}
+    for name, m in meta.items():
+        c = cn.get(m.get("category") or "")
+        if not c or c in ("品牌", "字母", "数字", "文件类型", "徽章", "星座", "洗涤标识"):
+            continue
+        full[name] = c
+        for w in name.split("-"):
+            word.setdefault(w, {}).setdefault(c, 0)
+            word[w][c] += 1
+    best = {w: max(cs, key=cs.get) for w, cs in word.items()}
+
+    def classify(name):
+        if name in full:
+            return full[name]
+        parts = name.split("-")
+        for w in parts:
+            if w in best:
+                return best[w]
+        return "其他"
+
+    order = [zh for _, zh in TABLER_CN] + ["其他"]
+    return classify, order
+
+
+# ---------------------------------------------------------------- Phosphor（fill / duotone）
+PH_CN = {"ARROWS": "箭头", "BRAND": "品牌", "COMMERCE": "商业", "COMMUNICATION": "沟通", "DESIGN": "设计", "DEVELOPMENT": "技术与开发", "EDUCATION": "教育",
+         "FINANCE": "数学与金融", "GAMES": "游戏", "HEALTH": "健康", "MAP": "地图与出行", "MEDIA": "媒体", "OFFICE": "办公与编辑", "PEOPLE": "人物",
+         "SECURITY": "安全与警告", "SYSTEM": "系统与设备", "TIME": "时间", "WEATHER": "天气与自然"}
+
+
+def phosphor_catalog():
+    """解析 @phosphor-icons/core 的 dist/index.mjs（纯数据模块，按文本解析，不执行）。"""
+    text = (SRC / "phosphor-icons-core" / "package" / "dist" / "index.mjs").read_text()
+    out = {}
+    for m in re.finditer(r'name: "([^"]+)",\s*pascal_name:.*?figma_category: a\.(\w+),\s*tags: \[(.*?)\]', text, re.S):
+        tags = [t for t in re.findall(r'"([^"]*)"', m[3]) if not t.startswith("*")]
+        out[m[1]] = (PH_CN.get(m[2], "其他"), tags)
+    return out
+
+
+def gen_phosphor(style, pid, title, zh_words):
+    j, _ = iconify("ph")
+    catalog = phosphor_catalog()
+    cats = {}
+    for name, (cat, tags) in catalog.items():
+        ic = j["icons"].get(f"{name}-{style}")
+        if not ic:
+            continue
+        w, h = size_of(j, ic)
+        t, zh = zh_of(name, zh_words)
+        keys = " ".join([name, *tags, *zh])
+        cats.setdefault(cat, []).append(icon(f"{name}-{style}", t or name, keys, ic["body"], w, h, 256, 256))
+    order = [c for c in PH_CN.values() if c in cats] + [c for c in cats if c not in PH_CN.values()]
+    write({"id": pid, "title": title, "mono": True, "w": 256, "h": 256, "license": "MIT · Phosphor Icons", "url": "https://phosphoricons.com",
+           "cats": [{"name": c, "icons": cats[c]} for c in order]})
+
+
+# ---------------------------------------------------------------- TDesign
+def tdesign_manifest():
+    """解析 tdesign-icons-view 的 td-icons-manifest.es.js（JS 对象字面量，按文本转成 JSON，不执行）。"""
+    text = (SRC / "tdesign-icons-view" / "package" / "dist" / "td-icons-manifest.es.js").read_text()
+    body = text[text.index("{"): text.index("\n};") + 2]
+    body = re.sub(r"^(\s*)([A-Za-z_$][\w$]*|\"[^\"]+\"):", lambda m: f'{m[1]}"{m[2].strip(chr(34))}":', body, flags=re.M)
+    body = re.sub(r",(\s*[}\]])", r"\1", body)
+    return json.loads(body)
+
+
+def gen_tdesign():
+    j, _ = iconify("tdesign")
+    man = tdesign_manifest()
+    # 同一分类里线框在前、实心紧跟其后，方便对照挑选
+    cats, keys_of = {}, {}
+    for style in ("outline", "filled"):
+        for en, c in man.get(style, {}).items():
+            cats.setdefault(en, (c["labelCN"], []))
+            for ic in c["icons"]:
+                keys_of[ic["name"]] = ic.get("keywords", [])
+                if style == "outline":
+                    cats[en][1].append(ic["name"])
+    for en, c in man.get("filled", {}).items():
+        lst = cats[en][1]
+        for ic in c["icons"]:
+            base = ic["name"].removesuffix("-filled")
+            if base in lst:
+                lst.insert(lst.index(base) + 1, ic["name"])
+            else:
+                lst.append(ic["name"])
+    out, seen = [], set()
+    for en, (zh, names) in cats.items():
+        items = []
+        for n in names:
+            ic = j["icons"].get(n)
+            if not ic or n in seen:
+                continue
+            seen.add(n)
+            kw = keys_of.get(n, [])
+            w, h = size_of(j, ic)
+            items.append(icon(n, kw[0] if kw else n, " ".join([n, *kw]), scope_ids(ic["body"], f"tdesign-{n}"), w, h, 24, 24))
+        if items:
+            out.append({"name": zh, "icons": items})
+    # 品牌放最后
+    out.sort(key=lambda c: c["name"] in ("品牌", "其他"))
+    write({"id": "tdesign", "title": "TDesign", "mono": True, "w": 24, "h": 24, "license": "MIT · Tencent TDesign", "url": "https://tdesign.tencent.com/icons", "cats": out})
+
+
+# ---------------------------------------------------------------- Fluent UI System Icons（24px filled）
+def gen_fluentui(zh_words):
+    j, _ = iconify("fluent")
+    classify, order = tabler_classifier()
+    cats = {}
+    for name, ic in j["icons"].items():
+        if not name.endswith("-24-filled"):
+            continue
+        base = name.removesuffix("-24-filled")
+        w, h = size_of(j, ic)
+        t, zh = zh_of(base, zh_words)
+        cats.setdefault(classify(base), []).append(icon(base, t or base, " ".join([base, *zh]), ic["body"], w, h, 24, 24))
+    write({"id": "fluentui", "title": "Fluent 图标", "mono": True, "w": 24, "h": 24, "license": "MIT · Microsoft Fluent UI System Icons",
+           "url": "https://github.com/microsoft/fluentui-system-icons", "cats": [{"name": c, "icons": cats[c]} for c in order if c in cats]})
+
+
+# ---------------------------------------------------------------- Carbon（精选：架构 / 数据 / 流程）
+CARBON = [
+    ("云与基础设施", "云 基础设施 服务器 部署", "cloud server bare-metal virtual vm instance edge data-center kubernetes container deploy deployment load-balancer hybrid "
+                                     "cluster namespace pod infrastructure datastore storage object-storage block-storage file-storage hardware-security-module"),
+    ("网络与安全", "网络 安全 网关", "network gateway firewall vpn router direct-link transit subnet security encryption api-key lock password fingerprint "
+                              "identification policy compliance shield certificate wifi satellite"),
+    ("数据与分析", "数据 数据库 分析", "data database db2 query sql analytics dashboard chart-network catalog warehouse lake replicate migrate etl batch stream"),
+    ("应用与集成", "应用 接口 集成 微服务", "api app application microservices webhook integration connection connect plug event message queue"),
+    ("AI 与机器学习", "人工智能 大模型 机器学习", "ai machine-learning model watson neural bot chat-bot"),
+    ("流程与建模", "流程 建模 BPMN 决策", "bpmn flow decision task workflow rule process milestone swim"),
+    ("物联网", "物联网 传感器 设备", "iot sensor platforms edge-device"),
+]
+
+
+def gen_carbon():
+    j, _ = iconify("carbon")
+    taken, cats = set(), []
+    for cat, kw, prefixes in CARBON:
+        items = []
+        for name in sorted(j["icons"]):
+            if name in taken or name.startswith(("ibm", "logo")) or "watson" in name or name.endswith("-reference"):
+                continue
+            if not any(name == p or name.startswith(p + "-") or name.startswith(p) and p.endswith("-") for p in prefixes.split()):
+                continue
+            taken.add(name)
+            ic = j["icons"][name]
+            w, h = size_of(j, ic)
+            items.append(icon(name, name, f"{name} {kw} {cat}", scope_ids(ic["body"], f"carbon-{name}"), w, h, 32, 32))
+        cats.append({"name": cat, "icons": items})
+    write({"id": "carbon", "title": "Carbon 架构", "mono": True, "w": 32, "h": 32, "license": "Apache-2.0 · IBM Carbon Design System",
+           "url": "https://carbondesignsystem.com/elements/icons/library/", "cats": cats})
+
+
+# ---------------------------------------------------------------- 品牌图标（Simple Icons 精选，单色可改色）
+BRANDS = [
+    ("国内应用", "wechat:微信 qq:QQ alipay:支付宝 sinaweibo:新浪微博 bilibili:哔哩哔哩 douban:豆瓣 zhihu:知乎 xiaohongshu:小红书 tiktok:抖音_TikTok bytedance:字节跳动 "
+              "kuaishou:快手 meituan:美团 taobao:淘宝 neteasecloudmusic:网易云音乐 tripdotcom:携程_Trip.com baidu:百度 alibabacloud:阿里云 alibabadotcom:阿里巴巴 "
+              "aliexpress:速卖通 zcool:站酷 juejin:稀土掘金 gitee:Gitee csdn:CSDN deepin:深度操作系统 harmonyos:鸿蒙"),
+    ("国产硬件与品牌", "huawei:华为 xiaomi:小米 oppo:OPPO vivo:vivo honor:荣耀 dji:大疆 lenovo:联想 anta:安踏"),
+    ("科技公司", "apple:苹果 google:谷歌 microsoft:微软 amazon:亚马逊 meta:Meta samsung:三星 sony:索尼 nintendo:任天堂 tesla:特斯拉 steam:Steam playstation:PlayStation xbox:Xbox"),
+    ("社交与内容", "facebook:Facebook instagram:Instagram x:X_推特 youtube:YouTube netflix:奈飞 spotify:Spotify linkedin:领英 reddit:Reddit pinterest:Pinterest "
+               "snapchat:Snapchat threads:Threads line:LINE kakaotalk:KakaoTalk mastodon:Mastodon bluesky:Bluesky twitch:Twitch tumblr:Tumblr quora:Quora "
+               "medium:Medium wikipedia:维基百科 wordpress:WordPress duolingo:多邻国 coursera:Coursera udemy:Udemy"),
+    ("电商与支付", "paypal:PayPal stripe:Stripe visa:Visa mastercard:万事达 americanexpress:美国运通 shopify:Shopify ebay:eBay etsy:Etsy walmart:沃尔玛 ikea:宜家 "
+               "uber:优步 airbnb:爱彼迎 tripadvisor:猫途鹰 expedia:Expedia"),
+    ("办公与 SaaS", "salesforce:Salesforce hubspot:HubSpot zendesk:Zendesk intercom:Intercom mailchimp:Mailchimp twilio:Twilio atlassian:Atlassian canva:Canva "
+                  "adobe:Adobe adobephotoshop:Photoshop adobeillustrator:Illustrator adobexd:Adobe_XD adobeacrobatreader:Acrobat framer:Framer webflow:Webflow wix:Wix "
+                  "squarespace:Squarespace zapier:Zapier make:Make ifttt:IFTTT typeform:Typeform calendly:Calendly loom:Loom gitbook:GitBook evernote:印象笔记 "
+                  "todoist:Todoist ticktick:滴答清单 box:Box googledrive:Google_云端硬盘 googledocs:Google_文档 googlesheets:Google_表格 googleslides:Google_幻灯片 "
+                  "googlemeet:Google_Meet googlecalendar:Google_日历 microsoftword:Word microsoftexcel:Excel microsoftpowerpoint:PowerPoint microsoftoutlook:Outlook "
+                  "basecamp:Basecamp coda:Coda logseq:Logseq raycast:Raycast"),
+    ("浏览器", "googlechrome:Chrome firefox:Firefox safari:Safari microsoftedge:Edge opera:Opera brave:Brave arc:Arc"),
+    ("消费品牌", "starbucks:星巴克 mcdonalds:麦当劳 cocacola:可口可乐 nike:耐克 adidas:阿迪达斯 bmw:宝马 mercedes:奔驰 toyota:丰田 volkswagen:大众"),
+]
+
+
+def gen_brands():
+    j, _ = iconify("simple-icons")
+    have = {n for _, _, names in LOGOS for n in names.split()}  # 技术图标里已有彩色版的不再重复
+    cats = []
+    for cat, names in BRANDS:
+        items = []
+        for pair in names.split():
+            name, zh = pair.split(":")
+            zh = zh.replace("_", " ")
+            ic = j["icons"].get(name)
+            if not ic or name in have:
+                if not ic:
+                    print("  brands 缺少：", name)
+                continue
+            w, h = size_of(j, ic)
+            items.append(icon(name, zh, f"{name} {zh} {cat} 品牌 logo 标志", ic["body"], w, h, 24, 24))
+        cats.append({"name": cat, "icons": items})
+    write({"id": "brands", "title": "品牌图标", "mono": True, "w": 24, "h": 24, "license": "CC0-1.0 · Simple Icons（商标归各自所有者，仅用于指代相应品牌）",
+           "url": "https://simpleicons.org", "cats": cats})
+
+
+# ---------------------------------------------------------------- 国旗与地区旗
+CONTINENTS = [("142", "亚洲"), ("150", "欧洲"), ("019", "美洲"), ("002", "非洲"), ("009", "大洋洲")]
+# 中国的特别行政区按「中国香港 / 中国澳门」称呼；台湾地区不收旗帜
+FLAG_NAMES = {"hk": "中国香港", "mo": "中国澳门"}
+FLAG_SKIP = {"tw"}
+
+
+def gen_flags():
+    j, _ = iconify("circle-flags")
+    names = json.loads((SRC / "cldr-localenames-full" / "package" / "main" / "zh" / "territories.json").read_text())
+    names = names["main"]["zh"]["localeDisplayNames"]["territories"]
+    contain = json.loads((SRC / "cldr-core" / "package" / "supplemental" / "territoryContainment.json").read_text())["supplemental"]["territoryContainment"]
+
+    def leaves(code):
+        kids = contain.get(code, {}).get("_contains", [])
+        return [x for k in kids for x in (leaves(k) if k in contain and not k.isalpha() else [k])]
+
+    cats, seen = [], set()
+    for code, zh in CONTINENTS:
+        items = []
+        for t in sorted(leaves(code), key=lambda t: names.get(t, t)):
+            n = t.lower()
+            if n in seen or n in FLAG_SKIP or n not in j["icons"]:
+                continue
+            seen.add(n)
+            title = FLAG_NAMES.get(n, names.get(t, t))
+            ic = j["icons"][n]
+            w, h = size_of(j, ic)
+            items.append(icon(n, title, f"{n} {title} {zh} 国旗 旗帜 flag", scope_ids(ic["body"], f"flags-{n}"), w, h, 512, 512))
+        # 中国排在亚洲最前
+        items.sort(key=lambda d: d["n"] not in ("cn", "hk", "mo"))
+        cats.append({"name": zh, "icons": items})
+    orgs = []
+    for n, title in [("european-union", "欧盟"), ("un", "联合国")]:
+        if n in j["icons"]:
+            ic = j["icons"][n]
+            w, h = size_of(j, ic)
+            orgs.append(icon(n, title, f"{n} {title} 国际组织 旗帜 flag", scope_ids(ic["body"], f"flags-{n}"), w, h, 512, 512))
+    cats.append({"name": "国际组织", "icons": orgs})
+    write({"id": "flags", "title": "国旗与地区旗", "mono": False, "w": 512, "h": 512, "license": "MIT · HatScripts circle-flags；中文名来自 Unicode CLDR",
+           "url": "https://github.com/HatScripts/circle-flags", "cats": cats})
+
+
 if __name__ == "__main__":
     OUT.mkdir(parents=True, exist_ok=True)
     zh_words = {}
-    gen_park(zh_words)
+    gen_park(zh_words)  # 总要跑：给其他图标库提供英文名 → 中文词表
     gen_tabler(zh_words)
-    gen_pm()
-    gen_avatars()
-    gen_logos()
-    gen_fluent()
+    seed_zh_words(zh_words)  # 在 Tabler 之后补，保持已发布的 Tabler 包不变
+    if wanted("pm"):
+        gen_pm()
+    if wanted("avatar"):
+        gen_avatars()
+    if wanted("logos"):
+        gen_logos()
+    if wanted("fluent"):
+        gen_fluent()
+    gen_park_style("solid", "park-solid", "IconPark 实心")
+    gen_park_style("twotone", "park-twotone", "IconPark 双色")
+    gen_tabler_filled(zh_words)
+    gen_phosphor("fill", "ph-fill", "Phosphor 实心", zh_words)
+    gen_phosphor("duotone", "ph-duotone", "Phosphor 双色", zh_words)
+    if wanted("tdesign"):
+        gen_tdesign()
+    if wanted("fluentui"):
+        gen_fluentui(zh_words)
+    if wanted("carbon"):
+        gen_carbon()
+    if wanted("brands"):
+        gen_brands()
+    if wanted("flags"):
+        gen_flags()

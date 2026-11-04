@@ -21,7 +21,7 @@ No account, no cloud. Everything lives in one SQLite file on your machine (only 
 | Documents | Six heading levels, nested lists and to-dos, quotes, callouts, code blocks (highlighting for 19 languages), tables, columns, image crop and scale; Markdown shortcuts; comments; synced blocks; templates |
 | Paste and export | Paste from the web and keep the formatting; copy writes both HTML and Markdown; import Markdown; export Markdown / HTML / PDF |
 | Diagrams and math | A built-in Mermaid-style renderer (flowchart, sequence, class, state, ER, Gantt, pie, mind map, timeline); KaTeX, block and inline |
-| Boards | Shapes, connectors, sticky notes, frames, swimlanes, freehand, mind maps, about 9,800 assets, 57 templates; Mermaid / PlantUML converted into editable shapes |
+| Boards | Shapes, connectors, sticky notes, frames, swimlanes, freehand, mind maps, about 23,000 assets, 57 templates; Mermaid / PlantUML converted into editable shapes |
 | Spreadsheets | IronCalc formula engine (497 functions), conditional formatting, data validation, dropdowns, filter and sort, freeze panes, multiple sheets, xlsx / CSV |
 | Databases | 21 field types, formulas and relation lookups; table / kanban / gallery / Gantt / calendar / form; virtual scrolling in both directions, tested at 100,000 rows |
 | Rich blocks | Link cards, video, file attachments (preview for code / PDF / Office / audio / archives), HTML blocks, countdowns, buttons, timelines |

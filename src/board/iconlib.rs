@@ -1,9 +1,9 @@
 //! 画板「素材」图标库（画板工具栏的「素材」：IconPark、表情、用户头像、项目管理……）。
 //!
 //! 素材集来自开源图标库，由 `scripts/iconlib/gen.py` 生成到 `assets/iconlib/*.json.z`（zlib 压缩的 JSON），
-//! 首次使用时解压（启动时会在后台线程预热）。许可见 `assets/iconlib/LICENSES.md`。
+//! 首次使用时解压（启动时会在后台线程预热）。来源见 `assets/iconlib/LICENSES.md`，许可全文见 `THIRD_PARTY_LICENSES.txt`。
 //!
-//! 图标名带素材集前缀，如 `park:user`、`fluent:grinning-face`；不带前缀的是最早内置的「常用」Lucide 图标（`board::icons`）。
+//! 图标名带素材集前缀，如 `park:user`、`fluent:grinning-face`、`fluentui:person`（Fluent UI System Icons，与 Fluent Emoji 的 `fluent` 区分）；不带前缀的是最早内置的「常用」Lucide 图标（`board::icons`）。
 //! 单色图标（mono）可以改颜色，按 GPUI 的 SVG 蒙版绘制；彩色图标用 resvg 栅格化成位图绘制。
 
 use serde::Deserialize;
@@ -87,14 +87,26 @@ impl Def {
 /// 按顺序打包进来的素材集（id, 数据）
 const PACK_FILES: &[(&str, &[u8])] = &[
     ("park", include_bytes!("../../assets/iconlib/park.json.z")),
+    ("park-solid", include_bytes!("../../assets/iconlib/park-solid.json.z")),
+    ("park-twotone", include_bytes!("../../assets/iconlib/park-twotone.json.z")),
     ("pm", include_bytes!("../../assets/iconlib/pm.json.z")),
     ("avatar", include_bytes!("../../assets/iconlib/avatar.json.z")),
     ("logos", include_bytes!("../../assets/iconlib/logos.json.z")),
+    ("brands", include_bytes!("../../assets/iconlib/brands.json.z")),
+    ("flags", include_bytes!("../../assets/iconlib/flags.json.z")),
     ("tabler", include_bytes!("../../assets/iconlib/tabler.json.z")),
+    ("tabler-filled", include_bytes!("../../assets/iconlib/tabler-filled.json.z")),
+    ("ph-fill", include_bytes!("../../assets/iconlib/ph-fill.json.z")),
+    ("ph-duotone", include_bytes!("../../assets/iconlib/ph-duotone.json.z")),
+    ("tdesign", include_bytes!("../../assets/iconlib/tdesign.json.z")),
+    ("fluentui", include_bytes!("../../assets/iconlib/fluentui.json.z")),
+    ("carbon", include_bytes!("../../assets/iconlib/carbon.json.z")),
     ("fluent", include_bytes!("../../assets/iconlib/fluent.json.z")),
 ];
 
-/// 素材面板里的顺序：常用（内置 Lucide）、IconPark、项目管理、用户头像、技术图标、Tabler、Fluent Emoji
+/// 素材面板里的顺序：常用（内置 Lucide）、IconPark（线框 / 实心 / 双色）、项目管理、用户头像、技术图标、品牌图标、国旗与地区旗、
+/// Tabler（线框 / 实心）、Phosphor（实心 / 双色）、TDesign、Fluent 图标、Carbon 架构、Fluent Emoji。
+/// 素材集 id 会作为图标名前缀存进文档，已发布的 id 不能改。
 static PACKS: LazyLock<Vec<Pack>> = LazyLock::new(|| {
     let mut packs = vec![builtin()];
     for (id, data) in PACK_FILES {
@@ -282,8 +294,29 @@ mod tests {
     #[test]
     fn packs_load_and_resolve() {
         let packs = super::packs();
-        assert!(packs.len() >= 7, "素材集数量：{}", packs.len());
-        assert!(packs.iter().map(|p| p.len()).sum::<usize>() > 9000);
+        assert!(packs.len() >= 17, "素材集数量：{}", packs.len());
+        assert!(packs.iter().map(|p| p.len()).sum::<usize>() > 23000);
+        // 每个打包进来的素材集都要能解析出来（解析失败只会打印错误，不会 panic）
+        for (id, _) in super::PACK_FILES {
+            assert!(super::pack(id).is_some_and(|p| p.len() > 0), "素材集 {id} 没有加载");
+        }
+        for name in [
+            "park-solid:user",
+            "park-twotone:user",
+            "tabler-filled:user-filled",
+            "ph-fill:house-fill",
+            "ph-duotone:house-duotone",
+            "tdesign:user",
+            "fluentui:person",
+            "carbon:kubernetes",
+            "brands:wechat",
+            "flags:cn",
+        ] {
+            assert!(super::get(name).is_some(), "缺少 {name}");
+        }
+        assert!(super::is_color("flags:cn"));
+        assert!(!super::is_color("brands:wechat"));
+        assert!(super::get("flags:tw").is_none());
         assert!(super::get("star").is_some(), "内置图标不带前缀");
         assert!(super::get("park:user").is_some());
         assert!(super::is_color("fluent:grinning-face"));
@@ -294,16 +327,25 @@ mod tests {
         assert!(hits("用户", "tabler") > 5);
         assert!(hits("数据库", "logos") > 10);
         assert!(hits("笑", "fluent") > 5);
+        assert!(hits("用户", "park-solid") > 5);
+        assert!(hits("用户", "tdesign") > 5);
+        assert!(hits("数据库", "carbon") > 5);
+        assert!(hits("微信", "brands") == 1);
+        assert!(hits("中国", "flags") >= 3);
+        assert!(hits("用户", "fluentui") > 5);
     }
 
     #[test]
     fn color_icons_rasterize() {
-        for name in ["fluent:grinning-face", "avatar:notionists-1", "logos:docker", "pm:priority-1", "pm:star-half"] {
+        for name in ["fluent:grinning-face", "avatar:notionists-1", "logos:docker", "pm:priority-1", "pm:star-half", "flags:cn", "flags:european-union"] {
             let img = super::raster(name, 64).unwrap_or_else(|| panic!("{name} 栅格化失败"));
             assert!(img.size(0).width.0 > 0);
         }
         let svg = super::svg("tabler:user", Some("#ff0000")).unwrap();
         assert!(svg.contains("#ff0000") && !svg.contains("currentColor"));
+        // 用 mask 的单色图标（IconPark 实心 / 双色）改色后 mask id 带了素材集前缀，不会和别的图标撞
+        let svg = super::svg("park-twotone:user", Some("#ff0000")).unwrap();
+        assert!(svg.contains("#ff0000") && svg.contains(r#"id="park-twotone-user-"#), "{svg}");
     }
 }
 
@@ -314,15 +356,28 @@ mod export_tests {
     /// 导出 SVG / PNG：单色图标带颜色，彩色图标作为内嵌图片；结果能被 resvg 正常渲染。
     #[test]
     fn export_icons_to_svg_png() {
-        let names = ["star", "park:user", "tabler:database", "fluent:rocket", "avatar:lorelei-2", "logos:kubernetes", "pm:progress-75"];
+        let names = [
+            "star",
+            "park:user",
+            "tabler:database",
+            "fluent:rocket",
+            "avatar:lorelei-2",
+            "logos:kubernetes",
+            "pm:progress-75",
+            "park-twotone:user",
+            "ph-duotone:house-duotone",
+            "fluentui:person",
+            "brands:wechat",
+            "flags:cn",
+        ];
         let items = names
             .iter()
             .enumerate()
             .map(|(i, n)| Item::Icon(IconItem { rect: rect(10. + i as f32 * 60., 10., 48., 48.), name: n.to_string(), color: Col::rgb(0x3370ff) }))
             .collect();
-        let scene = Scene { items, width: 440., height: 70., bg: Some(Col::rgb(0xffffff)), ..Default::default() };
+        let scene = Scene { items, width: 20. + names.len() as f32 * 60., height: 70., bg: Some(Col::rgb(0xffffff)), ..Default::default() };
         let svg = crate::canvas::svg::to_svg(&scene);
-        assert!(svg.contains("#3370ff") && svg.matches("data:image/svg+xml;base64").count() == 4, "{svg}");
+        assert!(svg.contains("#3370ff") && svg.matches("data:image/svg+xml;base64").count() == 5, "{svg}");
         let png = crate::canvas::svg::svg_to_png(&svg, 2.).expect("png");
         if let Ok(out) = std::env::var("ICON_EXPORT_PNG") {
             std::fs::write(out, &png).unwrap();
