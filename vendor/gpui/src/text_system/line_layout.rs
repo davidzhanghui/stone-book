@@ -170,7 +170,12 @@ impl LineLayout {
                     last_candidate_x = x;
                 }
             } else {
-                if ch != ' ' && first_non_whitespace_ix.is_some() {
+                // [stonebrook patch] 避头尾，与 LineWrapper::wrap_line 一致。
+                if ch != ' '
+                    && first_non_whitespace_ix.is_some()
+                    && !LineWrapper::is_no_break_before(ch)
+                    && !LineWrapper::is_no_break_after(prev_ch)
+                {
                     last_candidate_ix = Some(boundary);
                     last_candidate_x = x;
                 }

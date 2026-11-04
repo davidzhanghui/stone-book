@@ -130,11 +130,23 @@ flowchart TB
 ## 开发
 
 ```bash
+scripts/check.sh                    # 提交前检查：fmt + clippy 零警告 + 全部测试（CI 跑的也是它）
+git config core.hooksPath scripts/hooks   # 可选：每次提交前自动跑 check.sh
 cargo test                          # 单元测试
-cargo clippy --all-targets          # 静态检查
 cargo fmt                           # 格式化（rustfmt.toml：max_width = 160）
 cargo build --no-default-features   # 不含开发功能的构建（正式包用这个）
 ```
+
+**编辑内核随机测试**（`src/editor/fuzz_tests.rs`）：用 GPUI 的无头 `TestAppContext` 驱动真实的 `Editor`，从一篇覆盖各种块的种子文档出发做随机编辑，每一步检查文档不变量、存盘再读回不变、阅读模式下改不了文档，最后撤销到底回到种子文档。结果可复现，失败时打印种子与最近的操作：
+
+```bash
+STONEBROOK_FUZZ_SEEDS=2000 STONEBROOK_FUZZ_STEPS=300 cargo test --release random_edits   # 加大强度
+STONEBROOK_FUZZ_SEED=17 cargo test random_edits                                          # 复现某个种子
+```
+
+**格式往返**：`tests/fixtures/all-blocks.json` 收录每种块的规范写法，必须读入再写出不变；新增块类型时编译器会提醒把它加进去（`STONEBROOK_WRITE_FIXTURE=1 cargo test all_blocks_fixture` 重新生成）。
+
+**截图回归**：`tools/harness/compare.py` 用同一份脚本分别跑新旧两个版本、逐像素比较，只改代码不改外观的重构应当每张一致，见 [tools/harness/README.md](tools/harness/README.md)。
 
 Cargo feature `dev`（默认开启）包含：脚本驱动测试、压测数据生成器和压测菜单入口。正式包用 `--no-default-features` 构建，不包含这些代码。
 

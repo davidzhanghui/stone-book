@@ -64,8 +64,13 @@ impl LineWrapper {
                                 last_candidate_width = width;
                             }
                         } else {
-                            // CJK may not be space separated, e.g.: `Hello world你好世界`
-                            if c != ' ' && first_non_whitespace_ix.is_some() {
+                            // CJK may not be space separated, e.g.: `Hello world你好世界`.
+                            // [stonebrook patch] 避头尾：闭合标点不在行首，开标点不在行尾。
+                            if c != ' '
+                                && first_non_whitespace_ix.is_some()
+                                && !Self::is_no_break_before(c)
+                                && !Self::is_no_break_after(prev_c)
+                            {
                                 last_candidate_ix = ix;
                                 last_candidate_width = width;
                             }
@@ -161,6 +166,21 @@ impl LineWrapper {
         }
 
         line
+    }
+
+    /// [stonebrook patch] CJK closing punctuation that must not begin a line.
+    pub(crate) fn is_no_break_before(c: char) -> bool {
+        matches!(
+            c,
+            '，' | '。' | '、' | '：' | '；' | '！' | '？' | '）' | '】' | '》' | '」' | '』' | '〕'
+                | '〉' | '”' | '’' | '…' | '～' | '·' | '%' | ')' | ']' | '}' | '!' | '?'
+                | ';'
+        )
+    }
+
+    /// [stonebrook patch] CJK opening punctuation that must not end a line.
+    pub(crate) fn is_no_break_after(c: char) -> bool {
+        matches!(c, '（' | '【' | '《' | '「' | '『' | '〔' | '〈' | '“' | '‘' | '(' | '[' | '{')
     }
 
     /// Any character in this list should be treated as a word character,
@@ -346,6 +366,27 @@ mod tests {
                 strikethrough: None,
             })
             .collect()
+    }
+
+    /// [stonebrook patch] 避头尾。测试文字系统里每个字 9.6px，72px 一行放 7 个字。
+    #[test]
+    fn test_wrap_line_kinsoku() {
+        let mut wrapper = build_wrapper();
+        // 第 8 个字是逗号：不能落在第二行行首，连同「七」一起换到下一行
+        assert_eq!(
+            wrapper.wrap_line(&[LineFragment::text("一二三四五六七，八九")], px(72.)).collect::<Vec<_>>(),
+            &[Boundary::new("一二三四五六".len(), 0)],
+        );
+        // 第 7 个字是开括号：不能留在第一行行尾，跟着后面的字换行
+        assert_eq!(
+            wrapper.wrap_line(&[LineFragment::text("一二三四五六（七八")], px(72.)).collect::<Vec<_>>(),
+            &[Boundary::new("一二三四五六".len(), 0)],
+        );
+        // 没有标点时照常在第 7 个字后换行
+        assert_eq!(
+            wrapper.wrap_line(&[LineFragment::text("一二三四五六七八九")], px(72.)).collect::<Vec<_>>(),
+            &[Boundary::new("一二三四五六七".len(), 0)],
+        );
     }
 
     #[test]

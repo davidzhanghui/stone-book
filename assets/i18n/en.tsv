@@ -1,0 +1,492 @@
+# 界面英文翻译：中文<TAB>English。新增界面文字时在这里补一行；没有译文的会原样显示中文。
+暂不支持的对象类型	Unsupported object type
+已作为思维导图插入到光标处	Inserted as a mind map at the cursor
+未命名模板	Untitled template
+空白文档	Blank document
+从零开始	Start from scratch
+删除模板	Delete template
+从模板新建	New from template
+插入模板	Insert template
+内置模板	Built-in templates
+我的模板	My templates
+提示：在文档右上角「⋯」菜单中选择「另存为模板」，即可把任意文档变成自己的模板	Tip: choose “Save as template” in the “⋯” menu at the top right to turn any document into a template
+已插入关联的多维表格，两处修改实时同步	Linked base inserted — edits stay in sync in both places
+关联已有多维表格	Link an existing base
+插入的是同一份数据：在任意一处修改，其他文档里的这个多维表格同步更新	This inserts the same data: edit it anywhere and the base updates in every document
+还没有多维表格，先用斜杠菜单「表格 / 看板 / 画册」新建一个	No bases yet — create one from the slash menu (Table / Kanban / Gallery)
+链接的文档不存在或已在回收站	The linked document doesn’t exist or is in the Trash
+我	Me
+主题文件读不到了，已用默认配色	Couldn’t read the theme file; using the default colors
+已切换为阅读模式	Switched to reading mode
+已切换为编辑模式	Switched to editing mode
+文档无法打开	The document can’t be opened
+未命名文档	Untitled
+专注模式 · ⇧⌘F 退出	Focus mode · ⇧⌘F to exit
+已退出专注模式	Left focus mode
+主题已跟随系统	Theme now follows the system
+多维表格压测	Base stress test
+导出失败	Export failed
+正在导出备份…	Exporting backup…
+恢复	Restore
+正在校验备份…	Verifying backup…
+备份已就绪：请退出并重新打开石渠完成恢复（当前数据会保留在 recovery/ 目录）	Backup is ready: quit and reopen Stonebrook to finish restoring (current data is kept in recovery/)
+导入	Import
+导入的文档	Imported document
+搜索文档标题或正文…	Search titles and text…
+新建子文档	New subpage
+移到回收站	Move to Trash
+搜索	Search
+新建文档	New document
+我的文档	My documents
+回收站是空的	The Trash is empty
+已恢复	Restored
+永久删除	Delete permanently
+已永久删除	Deleted permanently
+切换深浅色 ⇧⌘D（右键跟随系统）	Toggle dark mode ⇧⌘D (right-click to follow the system)
+关于石渠	About Stonebrook
+阅读模式	Reading mode
+已保存到本地	Saved locally
+保存中…	Saving…
+评论	Comments
+大纲 ⇧⌘O	Outline ⇧⌘O
+专注模式 ⇧⌘F	Focus mode ⇧⌘F
+更多	More
+插入图片…	Insert image…
+从模板新建…	New from template…
+另存为模板	Save as template
+以思维导图查看	View as mind map
+导入 Markdown / 飞书 DocxXML…	Import Markdown / Feishu DocxXML…
+导出为 Markdown	Export as Markdown
+导出为 HTML	Export as HTML
+导出为飞书 DocxXML	Export as Feishu DocxXML
+导出为 PDF	Export as PDF
+导出完整备份…	Export full backup…
+从备份恢复…	Restore from backup…
+演示模式	Present
+切换为编辑模式	Switch to editing mode
+切换为阅读模式	Switch to reading mode
+命令面板	Command palette
+快捷键	Keyboard shortcuts
+设置	Settings
+性能面板	Performance panel
+生成百万字压测文档	Generate a 1M-character test document
+生成 10 万行多维表格压测	Generate a 100k-row base test
+打开欢迎文档	Open the welcome document
+关闭	Close
+还没有评论。选中文字或图片后，用块菜单或图片工具栏的「评论」添加。	No comments yet. Select text or an image, then use “Comment” in the block menu or image toolbar.
+重新打开	Reopen
+解决	Resolve
+删除	Delete
+原文已删除（撤销可找回）	Original text deleted (undo to restore)
+大纲	Outline
+添加标题后，这里会显示文档大纲	Add headings to see the outline here
+反向链接	Backlinks
+在其他文档里输入 @ 引用本文，会显示在这里	Type @ in another document to link here; it will show up in this list
+还没有文档	No documents yet
+没有找到匹配的文档	No matching documents
+最近编辑	Recently edited
+↵ 打开	↵ Open
+↑↓ 选择	↑↓ Select
+esc 关闭	esc Close
+石渠	Stonebrook
+藏书于石，引水成渠	Keep your writing in stone; let it flow like a brook
+纯本地存储，无账号、无云端、无追踪	Local-only storage: no account, no cloud, no tracking
+Rust + GPUI，Metal 直接绘制，百万字不卡顿	Rust + GPUI drawn with Metal — smooth even at a million characters
+块编辑器：表格、分栏、代码、高亮块、待办	Block editor: tables, columns, code, callouts, to-dos
+从网页粘贴，格式原样还原	Paste from the web with formatting intact
+图表、公式、画板、思维导图、电子表格	Diagrams, formulas, whiteboards, mind maps, spreadsheets
+点击任意处关闭	Click anywhere to close
+已创建副本	Duplicate created
+快速打开 / 全文搜索	Quick open / full-text search
+切换阅读 / 编辑模式	Toggle reading / editing mode
+导出完整备份（文档 + 图片 + 附件）	Export full backup (documents + images + attachments)
+导入 Markdown…	Import Markdown…
+切换深色 / 浅色主题	Toggle dark / light theme
+专注模式	Focus mode
+显示 / 隐藏侧边栏	Show / hide sidebar
+显示 / 隐藏大纲	Show / hide outline
+把当前文档移到回收站	Move this document to the Trash
+我的主题	My theme
+外观	Appearance
+主题	Theme
+深色模式下所有图表、公式都会自动适配	Diagrams and formulas adapt to dark mode automatically
+浅色	Light
+深色	Dark
+跟随系统	System
+配色方案	Color scheme
+用 CSS 变量改界面与文档的颜色，保存文件后自动生效	Recolor the app and documents with CSS variables; changes apply when you save the file
+新建主题	New theme
+编辑 CSS	Edit CSS
+打开主题文件夹	Open themes folder
+界面语言	Language
+菜单、面板与提示的语言；文档内容不变	Language of menus, panels and messages; your documents stay as they are
+中文	Chinese
+正文字号	Body text size
+影响所有文档的正文与列表	Applies to body text and lists in every document
+页面宽度	Page width
+宽版适合表格、图表较多的文档	Wide suits documents with many tables and diagrams
+标准	Standard
+宽版	Wide
+评论作者名	Comment author
+添加评论时显示的名字	Name shown on your comments
+隐私	Privacy
+允许联网	Allow network access
+仅用于网页卡片抓取标题和封面；关闭后石渠完全离线	Only used to fetch titles and covers for link cards; turn off to stay fully offline
+开启	On
+写作统计	Writing stats
+数据	Data
+本地数据	Local data
+文档、图片、嵌入对象全部保存在这台电脑上	Documents, images and embedded objects are all stored on this Mac
+在访达中显示	Show in Finder
+输入命令，例如「导出」「主题」「演示」	Type a command, e.g. “export”, “theme”, “present”
+没有匹配的命令	No matching commands
+正在生成 PDF…	Generating PDF…
+PDF 导出失败	PDF export failed
+%Y 年 %m 月 %d 日	%b %-d, %Y
+← → 翻页 · Esc 退出	← → to turn pages · Esc to exit
+请按带 ⌘ / ⌃ / ⌥ 的组合键或 F1–F12；Esc 取消	Press a combination with ⌘ / ⌃ / ⌥, or F1–F12; Esc to cancel
+点一行即可修改	Click a row to change it
+全部恢复默认	Reset all
+已全部恢复默认	All shortcuts reset
+按下新的快捷键…  Esc 取消	Press the new shortcut…  Esc to cancel
+未设置	Not set
+恢复默认	Reset
+应用与窗口	App & windows
+查看快捷键	Show shortcuts
+切换深浅色	Toggle dark mode
+文档	Documents
+阅读 / 编辑模式	Reading / editing mode
+导入 Markdown	Import Markdown
+导出 Markdown	Export Markdown
+文档内查找	Find in document
+查找下一个	Find next
+查找上一个	Find previous
+编辑	Edit
+撤销	Undo
+重做	Redo
+复制	Copy
+剪切	Cut
+粘贴	Paste
+粘贴为纯文本	Paste as plain text
+全选	Select all
+插入链接	Insert link
+复制当前块	Duplicate block
+上移当前块	Move block up
+下移当前块	Move block down
+勾选 / 取消待办	Check / uncheck to-do
+文字样式	Text styles
+粗体	Bold
+斜体	Italic
+下划线	Underline
+删除线	Strikethrough
+行内代码	Inline code
+段落与块	Paragraphs & blocks
+正文	Text
+一级标题	Heading 1
+二级标题	Heading 2
+三级标题	Heading 3
+四级标题	Heading 4
+有序列表	Numbered list
+无序列表	Bulleted list
+待办	To-do
+引用	Quote
+代码块	Code block
+设置…	Settings…
+命令面板…	Command palette…
+快捷键…	Keyboard shortcuts…
+服务	Services
+文件	File
+快速打开…	Quick open…
+导出为 Markdown…	Export as Markdown…
+导出为 HTML…	Export as HTML…
+导出为飞书 DocxXML…	Export as Feishu DocxXML…
+导出为 PDF…	Export as PDF…
+查找…	Find…
+格式	Format
+链接…	Link…
+待办事项	To-do
+创建块副本	Duplicate block
+上移块	Move block up
+下移块	Move block down
+视图	View
+侧边栏	Sidebar
+(非字符串 panic)	(non-string panic)
+转换为	Turn into
+背景颜色	Background color
+创建副本	Duplicate
+取消同步	Stop syncing
+设为同步块	Make synced block
+上移	Move up
+下移	Move down
+缩进和对齐	Indent & align
+缩进	Indent
+减少缩进	Outdent
+左对齐	Align left
+居中	Center
+右对齐	Align right
+表格	Table
+合并单元格	Merge cells
+拆分单元格	Split cell
+标题行	Header row
+开	On
+关	Off
+标题列	Header column
+均分列宽	Distribute columns evenly
+输入关键词	Type to search
+文本类型	Text type
+对齐方式	Alignment
+下划线 (⌘ + U)	Underline (⌘ + U)
+链接 (⌘ + K)	Link (⌘ + K)
+字体颜色 / 背景色	Text / background color
+清除格式	Clear formatting
+其他标题	More headings
+五级标题	Heading 5
+六级标题	Heading 6
+任务	Task
+高亮块	Callout
+居中对齐	Center
+顶部对齐	Align top
+垂直居中	Align middle
+底部对齐	Align bottom
+增加缩进	Indent
+字体颜色	Text color
+基础	Basic
+文本	Text
+分隔线	Divider
+链接	Link
+常用	Common
+图片	Image
+视频或文件	Video or file
+分栏	Columns
+同步块	Synced block
+公式	Formula
+模板	Template
+按钮	Button
+打开超链接	Open link
+电子表格	Spreadsheet
+多维表格	Base
+看板	Kanban
+甘特图	Gantt
+画册	Gallery
+绘图	Diagrams
+画板	Whiteboard
+思维导图	Mind map
+流程图	Flowchart
+UML 时序图	UML sequence diagram
+UML 类图	UML class diagram
+UML 状态图	UML state diagram
+文本绘图	Text diagram
+文本甘特图	Text Gantt chart
+饼图	Pie chart
+ER 图	ER diagram
+文本思维导图	Text mind map
+进阶	Advanced
+网页卡片	Link card
+倒计时	Countdown
+今天日期	Today’s date
+文档小组件	Widgets
+HTML 块	HTML block
+目录导航	Table of contents
+时间轴	Timeline
+一	Mon
+二	Tue
+三	Wed
+四	Thu
+五	Fri
+六	Sat
+日	Sun
+粘贴或输入网址，回车插入链接	Paste or type a URL, press Enter to insert a link
+输入网址，回车生成网页卡片	Type a URL, press Enter to create a link card
+先选中多个单元格再合并	Select several cells to merge
+先选中一段文字，再添加链接	Select some text first, then add a link
+粘贴或输入链接，回车确认	Paste or type a link, press Enter to confirm
+请输入标题	Untitled
+输入「/」快速插入内容	Type “/” to insert blocks
+评论均已解决	All comments resolved
+代码已复制	Code copied
+图片加载中…	Loading image…
+拖动边角调整 · ↵ 完成 · Esc 取消	Drag the corners · ↵ Done · Esc Cancel
+还原	Reset
+取消	Cancel
+完成	Done
+缩小	Zoom out
+放大	Zoom in
+恢复默认大小	Reset size
+裁剪	Crop
+撤销裁剪	Undo crop
+查看大图（双击图片）	View full size (double-click)
+编辑图片描述	Edit description
+查看评论	View comments
+添加评论	Add comment
+删除图片	Delete image
+无结果	No results
+↵ 确认 · 留空移除	↵ Confirm · leave empty to remove
+输入编号	Number
+新编号为	New number
+确定	OK
+继续之前的编号	Continue previous numbering
+开始新列表	Start new list
+修改编号值	Set number
+恢复自动编号	Use automatic numbering
+当前为阅读模式，按 ⌥⌘R 或点顶栏「阅读模式」切换回编辑	Reading mode is on — press ⌥⌘R or click “Reading mode” in the top bar to edit
+链接到文档	Link to document
+选中整张表格	Select whole table
+插入列	Insert column
+插入行	Insert row
+在上方插入行	Insert row above
+在下方插入行	Insert row below
+在左侧插入列	Insert column left
+在右侧插入列	Insert column right
+删除所在行	Delete row
+删除所在列	Delete column
+删除表格	Delete table
+插入支持富文本的表格	Insert a rich-text table
+移动鼠标选择行列，点击插入	Move the mouse to pick a size, click to insert
+增加一栏	Add column
+减少一栏	Remove column
+空分栏	Empty column
+目录	Contents
+文档中还没有标题	No headings in this document yet
+不支持的块类型（由更新版本的石渠创建），内容已原样保留	Unsupported block (created by a newer Stonebrook); its content is kept as is
+在下方输入 LaTeX 公式，例如 E = mc^2	Type a LaTeX formula below, e.g. E = mc^2
+公式渲染中…	Rendering formula…
+LaTeX · 支持 KaTeX 全部语法	LaTeX · full KaTeX syntax
+单击放大查看 · 双击编辑源码 · 拖动节点微调位置	Click to enlarge · double-click to edit source · drag nodes to adjust
+单击放大查看 · 双击编辑源码	Click to enlarge · double-click to edit source
+配色	Colors
+自动	Auto
+仅预览	Preview only
+仅源码	Source only
+并排	Side by side
+放大查看	Enlarge
+导出 PNG	Export PNG
+导出 SVG	Export SVG
+转为可编辑流程图	Convert to editable flowchart
+重置位置	Reset positions
+适应窗口	Fit to window
+关闭（Esc）	Close (Esc)
+只有流程图可以转换	Only flowcharts can be converted
+上传整个静态 HTML 页面，在文档中原地渲染；也可以手写 HTML 源码。	Upload a static HTML page to render it inline, or write HTML yourself.
+拖拽 HTML 文件到这里，或点击上传	Drop an HTML file here, or click to upload
+或手写 HTML 源码	or write HTML source
+正在渲染…	Rendering…
+渲染失败	Rendering failed
+退出交互	Exit interactive
+交互	Interactive
+联网：已允许	Network: allowed
+联网：已禁用	Network: blocked
+换文件	Replace file
+浏览器打开	Open in browser
+选择 HTML 文件	Choose HTML file
+无法读取该文件	Can’t read this file
+在下方输入 HTML，预览会显示在这里	Type HTML below; the preview appears here
+交互模式	Interactive mode
+脚本：已允许	Scripts: allowed
+脚本：已禁用	Scripts: blocked
+沙箱运行 · 禁止访问网络	Sandboxed · no network access
+刷新	Refresh
+转为链接	Convert to link
+复制链接	Copy link
+对象数据丢失	Object data is missing
+点击单元格直接编辑	Click a cell to edit
+双击编辑	Double-click to edit
+全屏	Full screen
+打开	Open
+退出全屏 (Esc)	Exit full screen (Esc)
+↵ 确认	↵ Confirm
+已撤销裁剪	Crop undone
+输入图片描述（替代文本）	Image description (alt text)
+写下评论，回车提交	Write a comment, press Enter to post
+已添加评论	Comment added
+网络图片（已关闭联网，未下载）	Web image (network is off, not downloaded)
+图片文件不存在	Image file not found
+添加图片描述	Add a description
+ · 已全部解决	 · all resolved
+↵ 发送 · Esc 取消	↵ Send · Esc Cancel
+回复…	Reply…
+默认	Default
+暖纸	Sepia
+北欧	Nord
+已复制	Copied
+插入图片	Insert image
+插入	Insert
+没有可以插入的图片	No images to insert
+没有可以插入的文件	No files to insert
+在文档中查找	Find in document
+编辑 LaTeX，回车确认，留空删除	Edit LaTeX, Enter to confirm, empty to delete
+请输入按钮文字	Button text
+请输入链接地址	Link URL
+链接已复制	Link copied
+按钮文字	Button text
+按钮颜色	Button color
+执行操作	Action
+超链接地址	Link URL
+天	d
+时	h
+分	m
+秒	s
+请选择晚于当前的时间	Pick a time in the future
+⏰ 倒计时已结束	⏰ Countdown finished
+颜色	Color
+倒计时已结束	Countdown finished
+输入倒计时时长	Duration
+选择具体日期	Pick a date
+倒计时结束时显示气泡提醒	Show a reminder when the countdown ends
+倒计时设置	Countdown settings
+今天	Today
+输入时间	Time
+输入标题	Title
+输入详情	Details
+删除节点	Delete node
+排列方式	Layout
+显示设置	Display
+水平排列	Horizontal
+垂直排列	Vertical
+交替	Alternate
+同侧	Same side
+标题	Title
+详情	Details
+时间	Time
+至少保留一项	Keep at least one
+所选内容已经是同步块	The selection is already a synced block
+已创建同步块：用「/同步块」可以把它插入到其他文档	Synced block created — insert it elsewhere with “/synced block”
+把当前块设为同步块	Make this block a synced block
+还没有同步块	No synced blocks yet
+插入已有的同步块	Insert an existing synced block
+（空）	(empty)
+内容较长，仅预览前面部分；完整内容请「用其他应用打开」	Long file — only the beginning is shown; use “Open with another app” for the rest
+加载中…	Loading…
+暂不支持预览该类型的文件	This file type can’t be previewed yet
+文件不存在	File not found
+用其他应用打开	Open with another app
+退出	Exit
+下载	Download
+旋转	Rotate
+原始尺寸	Actual size
+适应页面	Fit to page
+浅红色	Light red
+浅橙色	Light orange
+浅绿色	Light green
+浅青色	Light cyan
+浅蓝色	Light blue
+浅粉色	Light pink
+浅紫色	Light purple
+浅灰色	Light gray
+红色	Red
+橙色	Orange
+绿色	Green
+青色	Cyan
+蓝色	Blue
+粉色	Pink
+紫色	Purple
+黑色	Black
+黄色	Yellow
+灰色	Gray
+分割线	Divider
+视频	Video
+嵌入对象	Embedded object
+不支持的块	Unsupported block
+这篇文档的数据无法解析，原始内容已完整备份，未做任何修改。	This document’s data couldn’t be read. The original was backed up untouched.
+（文档数据损坏）	(Damaged document)
+本地文档	Local docs
+回收站	Trash

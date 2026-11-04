@@ -282,6 +282,9 @@ impl Editor {
     }
 
     pub fn move_up(&mut self, _: &MoveUp, _: &mut Window, cx: &mut Context<Self>) {
+        if self.pop.mention.is_some() {
+            return self.mention_move(-1, cx);
+        }
         if self.pop.slash.is_some() {
             let n = super::ops::filter_slash(&self.slash_query()).len().max(1);
             if let Some(sm) = self.pop.slash.as_mut() {
@@ -302,6 +305,9 @@ impl Editor {
     }
 
     pub fn move_down(&mut self, _: &MoveDown, _: &mut Window, cx: &mut Context<Self>) {
+        if self.pop.mention.is_some() {
+            return self.mention_move(1, cx);
+        }
         if self.pop.slash.is_some() {
             let n = super::ops::filter_slash(&self.slash_query()).len().max(1);
             if let Some(sm) = self.pop.slash.as_mut() {
@@ -417,11 +423,10 @@ impl Editor {
         let p = self.clamp(Pos::new(b, c, ix));
         // ⌘ + 点击打开链接
         if ev.modifiers.platform {
-            if let Some(t) = self.slot_text((b, c)) {
-                if let Some(url) = t.runs().find(|(r, _)| r.start <= p.offset && p.offset < r.end).and_then(|(_, m)| m.link.clone()) {
-                    cx.open_url(&url);
-                    return;
-                }
+            let url = self.slot_text((b, c)).and_then(|t| t.runs().find(|(r, _)| r.start <= p.offset && p.offset < r.end).and_then(|(_, m)| m.link.clone()));
+            if let Some(url) = url {
+                self.open_link(&url, cx);
+                return;
             }
         }
         self.mouse_select(p, ev.click_count, ev.modifiers.shift, cx);

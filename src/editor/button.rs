@@ -275,7 +275,7 @@ impl Editor {
     /// 配置浮层：按钮文字 / 按钮颜色 / 执行操作 / 超链接地址 / 取消·确定，贴在按钮下方。
     fn render_button_popover(&self, t: &Theme, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
         let be = self.pop.button_edit.as_ref().expect("button_edit");
-        let caption = |s: &'static str| div().pt(px(12.)).pb(px(6.)).text_size(px(12.)).text_color(t.text_secondary).child(s);
+        let caption = |s: &'static str| div().pt(px(12.)).pb(px(6.)).text_size(px(12.)).text_color(t.text_secondary).child(crate::i18n::tr(s));
         let field = |input: &Entity<LineInput>, key: &'static str| {
             let focused = input.focus_handle(cx).is_focused(window);
             let fh = input.focus_handle(cx);
@@ -422,7 +422,7 @@ impl Editor {
                 .cursor_pointer()
                 .when(primary, |d| d.bg(t.accent).text_color(gpui::white()).hover(|s| s.opacity(0.9)))
                 .when(!primary, |d| d.border_1().border_color(t.border).text_color(t.text).hover(|s| s.bg(t.hover)))
-                .child(label)
+                .child(crate::i18n::tr(label))
         };
 
         deferred(

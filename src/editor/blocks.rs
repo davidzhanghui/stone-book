@@ -112,9 +112,9 @@ impl Editor {
                             .text_size(px(12.))
                             .text_color(t.text_muted)
                             .child(icon("outline", 13., t.text_muted))
-                            .child("目录"),
+                            .child(crate::i18n::tr("目录")),
                     )
-                    .when(heads.is_empty(), |d| d.child(div().text_size(px(13.)).text_color(t.placeholder).child("文档中还没有标题")))
+                    .when(heads.is_empty(), |d| d.child(div().text_size(px(13.)).text_color(t.placeholder).child(crate::i18n::tr("文档中还没有标题"))))
                     .children(heads.into_iter().map(|(i, level, text)| {
                         div()
                             .id(("toc", i))
@@ -155,7 +155,7 @@ impl Editor {
                 .bg(t.hover)
                 .text_size(px(13.))
                 .text_color(t.text_muted)
-                .child("不支持的块类型（由更新版本的石渠创建），内容已原样保留")
+                .child(crate::i18n::tr("不支持的块类型（由更新版本的石渠创建），内容已原样保留"))
                 .child(self.void_marker(ix))
                 .on_mouse_down(MouseButton::Left, select_on_click)
                 .into_any_element(),
@@ -263,8 +263,8 @@ impl Editor {
         let editing = focused && self.head.block == ix;
         let state = if src.trim().is_empty() { None } else { Some(crate::math::request(&src, true, t.dark, cx)) };
         let preview: AnyElement = match state {
-            None => div().text_size(px(13.)).text_color(t.placeholder).child("在下方输入 LaTeX 公式，例如 E = mc^2").into_any_element(),
-            Some(crate::math::MathState::Pending) => div().text_size(px(13.)).text_color(t.text_muted).child("公式渲染中…").into_any_element(),
+            None => div().text_size(px(13.)).text_color(t.placeholder).child(crate::i18n::tr("在下方输入 LaTeX 公式，例如 E = mc^2")).into_any_element(),
+            Some(crate::math::MathState::Pending) => div().text_size(px(13.)).text_color(t.text_muted).child(crate::i18n::tr("公式渲染中…")).into_any_element(),
             Some(crate::math::MathState::Error(e)) => div().text_size(px(13.)).text_color(t.fg_palette[1]).child(format!("公式有误：{e}")).into_any_element(),
             Some(crate::math::MathState::Ready { path, width, height }) => {
                 let maxw = content_w() - 40.;
@@ -315,7 +315,7 @@ impl Editor {
                         .bg(t.code_bg)
                         .border_1()
                         .border_color(t.border)
-                        .child(div().text_size(px(11.)).text_color(t.text_muted).pb_1().child("LaTeX · 支持 KaTeX 全部语法"))
+                        .child(div().text_size(px(11.)).text_color(t.text_muted).pb_1().child(crate::i18n::tr("LaTeX · 支持 KaTeX 全部语法")))
                         .child(self.render_slot(ix, 0, &blk.text, spec, focused, t))
                         .on_mouse_down(MouseButton::Left, self.slot_click(ix, 0, cx)),
                 )
@@ -376,6 +376,8 @@ impl Editor {
         let src_max_h = if split { DIAGRAM_MAX_H } else { DIAGRAM_SRC_MAX_H };
         let frame = self.frame.clone();
         let preview: Option<AnyElement> = scene.clone().filter(|_| show_preview).map(|scene| {
+            // 保留 min/max 链：两个比值都为 NaN 时 clamp 会返回 NaN，这里要落到 1.0
+            #[allow(clippy::manual_clamp)]
             let scale = (avail / scene.width).min(max_h / scene.height).min(1.0).max(0.05);
             let h = scene.height * scale;
             let draggable = kind.is_some_and(|k| k.draggable());
@@ -496,7 +498,7 @@ impl Editor {
                 .text_color(if on { t.accent } else { t.text_secondary })
                 .when(on, |d| d.bg(t.accent_soft))
                 .hover(|s| s.bg(t.hover))
-                .child(label)
+                .child(crate::i18n::tr_owned(&label))
         };
         let theme_btn = div()
             .relative()
@@ -507,7 +509,7 @@ impl Editor {
                     .items_center()
                     .gap_1()
                     .child(icon("palette", 13., if menu_open { t.accent } else { t.text_secondary }))
-                    .child("配色")
+                    .child(crate::i18n::tr("配色"))
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |this, _, _, cx| {
@@ -975,8 +977,13 @@ impl Editor {
             .bg(t.panel_bg)
             .border_1()
             .border_color(t.border)
-            .child(div().text_size(px(18.)).font_weight(FontWeight::SEMIBOLD).text_color(t.text).child("HTML 块"))
-            .child(div().text_size(px(13.)).text_color(t.text_secondary).child("上传整个静态 HTML 页面，在文档中原地渲染；也可以手写 HTML 源码。"))
+            .child(div().text_size(px(18.)).font_weight(FontWeight::SEMIBOLD).text_color(t.text).child(crate::i18n::tr("HTML 块")))
+            .child(
+                div()
+                    .text_size(px(13.))
+                    .text_color(t.text_secondary)
+                    .child(crate::i18n::tr("上传整个静态 HTML 页面，在文档中原地渲染；也可以手写 HTML 源码。")),
+            )
             .child(
                 div()
                     .id(("html-pick", blk.id as usize))
@@ -995,7 +1002,7 @@ impl Editor {
                     .cursor_pointer()
                     .drag_over::<ExternalPaths>(|s, _, _, _| s.border_2())
                     .child(icon("upload", 28., t.accent))
-                    .child(div().text_size(px(13.)).text_color(t.text_secondary).child("拖拽 HTML 文件到这里，或点击上传"))
+                    .child(div().text_size(px(13.)).text_color(t.text_secondary).child(crate::i18n::tr("拖拽 HTML 文件到这里，或点击上传")))
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |this, _, _, cx| {
@@ -1004,17 +1011,25 @@ impl Editor {
                         }),
                     ),
             )
-            .child(div().id(("html-write", blk.id as usize)).text_size(px(12.)).text_color(t.accent).cursor_pointer().child("或手写 HTML 源码").on_mouse_down(
-                MouseButton::Left,
-                cx.listener(move |this, _, window, cx| {
-                    cx.stop_propagation();
-                    window.focus(&this.focus);
-                    this.checkpoint(EditKind::Other);
-                    this.block_mut(ix).text = crate::model::RichText::plain(super::ops::HTML_TPL);
-                    this.set_cursor(Pos::new(ix, 0, 0), false, cx);
-                    this.changed(cx);
-                }),
-            ))
+            .child(
+                div()
+                    .id(("html-write", blk.id as usize))
+                    .text_size(px(12.))
+                    .text_color(t.accent)
+                    .cursor_pointer()
+                    .child(crate::i18n::tr("或手写 HTML 源码"))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _, window, cx| {
+                            cx.stop_propagation();
+                            window.focus(&this.focus);
+                            this.checkpoint(EditKind::Other);
+                            this.block_mut(ix).text = crate::model::RichText::plain(super::ops::HTML_TPL);
+                            this.set_cursor(Pos::new(ix, 0, 0), false, cx);
+                            this.changed(cx);
+                        }),
+                    ),
+            )
     }
 
     /// 上传的整页 HTML：默认显示首屏快照，点击后切换为可交互的真实 WebView。
@@ -1065,12 +1080,24 @@ impl Editor {
                     .text_color(t.fg_palette[1])
                     .child(format!("文件不存在：{name}"))
                     .into_any_element(),
-                Some(crate::webview::SnapState::Pending) => {
-                    div().h(px(240.)).flex().items_center().justify_center().text_size(px(13.)).text_color(t.text_muted).child("正在渲染…").into_any_element()
-                }
-                Some(crate::webview::SnapState::Failed) => {
-                    div().h(px(120.)).flex().items_center().justify_center().text_size(px(13.)).text_color(t.fg_palette[1]).child("渲染失败").into_any_element()
-                }
+                Some(crate::webview::SnapState::Pending) => div()
+                    .h(px(240.))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .text_size(px(13.))
+                    .text_color(t.text_muted)
+                    .child(crate::i18n::tr("正在渲染…"))
+                    .into_any_element(),
+                Some(crate::webview::SnapState::Failed) => div()
+                    .h(px(120.))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .text_size(px(13.))
+                    .text_color(t.fg_palette[1])
+                    .child(crate::i18n::tr("渲染失败"))
+                    .into_any_element(),
                 Some(crate::webview::SnapState::Ready { path, width, height }) => img(path).w(px(width)).h(px(height)).into_any_element(),
             }
         };
@@ -1085,7 +1112,7 @@ impl Editor {
                 .text_color(if on { t.accent } else { t.text_secondary })
                 .when(on, |d| d.bg(t.accent_soft))
                 .hover(|s| s.bg(t.hover))
-                .child(label)
+                .child(crate::i18n::tr_owned(&label))
         };
         let bar = div()
             .absolute()
@@ -1238,9 +1265,15 @@ impl Editor {
                 .into_any_element()
         } else {
             match state {
-                None => div().py_4().text_size(px(13.)).text_color(t.placeholder).child("在下方输入 HTML，预览会显示在这里").into_any_element(),
-                Some(crate::webview::SnapState::Pending) => div().py_4().text_size(px(13.)).text_color(t.text_muted).child("正在渲染…").into_any_element(),
-                Some(crate::webview::SnapState::Failed) => div().py_4().text_size(px(13.)).text_color(t.fg_palette[1]).child("渲染失败").into_any_element(),
+                None => {
+                    div().py_4().text_size(px(13.)).text_color(t.placeholder).child(crate::i18n::tr("在下方输入 HTML，预览会显示在这里")).into_any_element()
+                }
+                Some(crate::webview::SnapState::Pending) => {
+                    div().py_4().text_size(px(13.)).text_color(t.text_muted).child(crate::i18n::tr("正在渲染…")).into_any_element()
+                }
+                Some(crate::webview::SnapState::Failed) => {
+                    div().py_4().text_size(px(13.)).text_color(t.fg_palette[1]).child(crate::i18n::tr("渲染失败")).into_any_element()
+                }
                 Some(crate::webview::SnapState::Ready { path, width, height }) => img(path).w(px(width)).h(px(height)).into_any_element(),
             }
         };
@@ -1255,7 +1288,7 @@ impl Editor {
                 .text_color(if on { t.accent } else { t.text_secondary })
                 .when(on, |d| d.bg(t.accent_soft))
                 .hover(|s| s.bg(t.hover))
-                .child(label)
+                .child(crate::i18n::tr(label))
         };
         div()
             .group("html")
@@ -1305,7 +1338,7 @@ impl Editor {
                         }),
                     ))
                     .child(div().flex_1())
-                    .child(div().text_size(px(11.)).text_color(t.text_muted).child("沙箱运行 · 禁止访问网络")),
+                    .child(div().text_size(px(11.)).text_color(t.text_muted).child(crate::i18n::tr("沙箱运行 · 禁止访问网络"))),
             )
             .child(div().w_full().flex().justify_center().child(preview).on_mouse_down(
                 MouseButton::Left,
@@ -1349,7 +1382,7 @@ impl Editor {
                 .text_color(t.text_secondary)
                 .cursor_pointer()
                 .hover(|s| s.bg(t.hover))
-                .child(label)
+                .child(crate::i18n::tr(label))
         };
         let actions = div()
             .absolute()
@@ -1571,7 +1604,7 @@ impl Editor {
         let (k1, id1) = (kind.to_string(), oid.to_string());
         let (k2, id2) = (kind.to_string(), oid.to_string());
         let preview: AnyElement = match crate::objects::get(oid) {
-            None => div().p_4().text_size(px(13.)).text_color(t.fg_palette[1]).child("对象数据丢失").into_any_element(),
+            None => div().p_4().text_size(px(13.)).text_color(t.fg_palette[1]).child(crate::i18n::tr("对象数据丢失")).into_any_element(),
             Some(crate::objects::ObjData::Sheet(_)) => {
                 // 文档里的表格直接可编辑，选中后上方浮出工具栏，「全屏」进入完整编辑页
                 let view = self.live_sheet(oid, window, cx);
@@ -1648,7 +1681,7 @@ impl Editor {
                     .text_size(px(12.))
                     .text_color(t.text_secondary)
                     .child(ic)
-                    .child(label)
+                    .child(crate::i18n::tr_owned(&label))
                     .child(div().flex_1())
                     .child(div().text_color(t.text_muted).child(if kind == "sheet" { "点击单元格直接编辑" } else { "双击编辑" }))
                     .child(
@@ -1712,7 +1745,7 @@ impl Editor {
                 .text_color(gpui::white())
                 .cursor_pointer()
                 .hover(|s| s.bg(gpui::hsla(0., 0., 1., 0.15)))
-                .child(label)
+                .child(crate::i18n::tr_owned(&label))
         };
         let center_play = (!playing).then(|| {
             div().absolute().inset_0().flex().items_center().justify_center().child(
@@ -1835,7 +1868,7 @@ impl Editor {
                         .text_color(gpui::white())
                         .text_size(px(13.))
                         .cursor_pointer()
-                        .child("退出全屏 (Esc)")
+                        .child(crate::i18n::tr("退出全屏 (Esc)"))
                         .on_mouse_down(
                             MouseButton::Left,
                             cx.listener(|this, _, _, cx| {
@@ -1877,7 +1910,7 @@ impl Editor {
                         .shadow_lg()
                         .text_size(px(13.))
                         .child(div().flex_1().line_height(px(22.)).child(pe.input.clone()))
-                        .child(div().text_size(px(11.)).text_color(t.text_muted).child("↵ 确认")),
+                        .child(div().text_size(px(11.)).text_color(t.text_muted).child(crate::i18n::tr("↵ 确认"))),
                 ),
             )
             .with_priority(4),

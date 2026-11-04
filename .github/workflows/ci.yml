@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: fmt + clippy + test
+    # 需要 AppKit / Metal / WKWebView，只能在 macOS 上编译和测试
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # rust-toolchain.toml 固定编译器版本，rustup 在这里按它安装，本地与 CI 一致
+      - name: Install toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: fmt / clippy / test
+        run: scripts/check.sh
+
+      - name: 更长的编辑内核随机测试
+        env:
+          STONEBROOK_FUZZ_SEEDS: "300"
+        run: cargo test --release --locked random_edits

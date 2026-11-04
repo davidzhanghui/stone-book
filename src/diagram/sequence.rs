@@ -252,7 +252,7 @@ pub fn render(body: &[(usize, String)], theme: &Theme, m: &mut dyn Measure) -> D
                 } else {
                     let dir = if to > from { 1. } else { -1. };
                     let xa = xs[*from] + dir * (5. + act_x(&active, *from) * 0.);
-                    let xb = xs[*to] - dir * (5. + if activate == &Some(true) { 0. } else { 0. });
+                    let xb = xs[*to] - dir * 5.;
                     l = LineItem::new(vec![pt(xa, y), pt(xb, y)]);
                     let mid = (xa + xb) / 2.;
                     lines_out.push(Item::Text(crate::canvas::TextItem {

@@ -623,7 +623,7 @@ impl Editor {
                 .cursor_pointer()
                 .hover(|s| s.bg(t.hover))
                 .child(icon(ic, 14., t.text_secondary))
-                .child(label)
+                .child(crate::i18n::tr(label))
         };
         // 盖住整个窗口（侧栏、大纲也在下面）
         let panel = div()
@@ -693,7 +693,7 @@ impl Editor {
                     .text_color(gpui::white())
                     .cursor_pointer()
                     .hover(|s| s.opacity(0.9))
-                    .child("用其他应用打开")
+                    .child(crate::i18n::tr("用其他应用打开"))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         if let Some((path, _)) = this.attach_path(ix) {
                             cx.open_with_system(Path::new(&path));
@@ -895,9 +895,9 @@ impl Editor {
     pub(super) fn render_no_preview(&self, name: &str, size: Option<u64>, t: &Theme) -> AnyElement {
         let ext = ext_of(name);
         let title = if ext.is_empty() {
-            div().child("该文件类型无法预览")
+            div().child(crate::i18n::tr("该文件类型无法预览"))
         } else {
-            div().flex().child(div().font_weight(FontWeight::SEMIBOLD).child(format!(".{ext}"))).child(" 文件类型无法预览")
+            div().flex().child(div().font_weight(FontWeight::SEMIBOLD).child(format!(".{ext}"))).child(crate::i18n::tr(" 文件类型无法预览"))
         };
         let info = match size {
             Some(s) => format!("{name} · {}", human_size(s)),
@@ -1421,9 +1421,15 @@ pub(crate) fn video_player(id: u64, path: &str, name: &str, w: f32, h: f32, opts
     let picture: AnyElement = match (&frame_buf, &meta) {
         (Some(buf), _) => surface(buf.clone()).size_full().into_any_element(),
         (None, Some(m)) => img(PathBuf::from(&m.0)).size_full().object_fit(ObjectFit::Cover).into_any_element(),
-        (None, None) => {
-            div().size_full().bg(gpui::black()).flex().items_center().justify_center().text_color(gpui::white()).child("无法读取视频").into_any_element()
-        }
+        (None, None) => div()
+            .size_full()
+            .bg(gpui::black())
+            .flex()
+            .items_center()
+            .justify_center()
+            .text_color(gpui::white())
+            .child(crate::i18n::tr("无法读取视频"))
+            .into_any_element(),
     };
     let p1 = path_s.clone();
     let press = opts.on_press.clone();
@@ -1446,7 +1452,7 @@ pub(crate) fn video_player(id: u64, path: &str, name: &str, w: f32, h: f32, opts
             .text_color(gpui::white())
             .cursor_pointer()
             .hover(|s| s.bg(gpui::hsla(0., 0., 1., 0.15)))
-            .child(label)
+            .child(crate::i18n::tr_owned(&label))
     };
     let frac = if total > 0. { (pos / total).clamp(0., 1.) as f32 } else { 0. };
     let idle = !started || !playing && pos < 0.05;

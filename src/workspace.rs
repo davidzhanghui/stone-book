@@ -14,6 +14,7 @@ use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 mod panels;
+mod shortcuts_panel;
 
 actions!(
     stonebrook,
@@ -40,7 +41,10 @@ actions!(
         ExportPdf,
         ExportBackup,
         RestoreBackup,
-        Present
+        Present,
+        ToggleReadMode,
+        ShowShortcuts,
+        ExportDocxXml
     ]
 );
 
@@ -61,6 +65,12 @@ pub struct Workspace {
     show_outline: bool,
     focus_mode: bool,
     theme_mode: ThemeMode,
+    /// 配色主题（theme_css::list 的选择值；空串为默认）
+    css_theme: String,
+    /// 当前配色主题里没生效的条目
+    theme_problems: Vec<String>,
+    /// 用户主题文件的修改时间（变了就重新加载）
+    theme_mtime: Option<std::time::SystemTime>,
     switcher: Option<Switcher>,
     show_trash: bool,
     toast: Option<String>,
@@ -69,6 +79,10 @@ pub struct Workspace {
     more_menu: bool,
     last_title: String,
     outline: (u64, Vec<(usize, u8, SharedString)>),
+    /// 反向链接缓存：(文档 ID, 文档列表签名, 链接到它的文档)
+    backlinks: (String, u64, Vec<(String, String)>),
+    /// 上次同步给编辑器 `@` 菜单的文档列表签名
+    doc_list_sig: u64,
     outline_scroll: UniformListScrollHandle,
     outline_current: Option<usize>,
     focused_once: bool,
@@ -85,12 +99,15 @@ pub struct Workspace {
     /// 设置面板里的「评论作者名」输入框
     author_input: Entity<LineInput>,
     palette: Option<(Entity<LineInput>, Subscription, usize)>,
+    /// 快捷键面板（⌘/）
+    shortcuts_panel: Option<shortcuts_panel::ShortcutsPanel>,
     slides: Option<(Vec<panels::Slide>, usize)>,
     present_focus: FocusHandle,
     present_fullscreen: bool,
     /// 全屏打开的嵌入对象编辑器
     embed: Option<(AnyView, FocusHandle, Subscription)>,
     _subs: Vec<Subscription>,
+    _theme_watch: Task<()>,
     _error_poll: Task<()>,
 }
 
@@ -237,7 +254,7 @@ impl Workspace {
                     gpui::rgb(color).into(),
                 )))
                 .child(div().mt_1().text_size(px(14.)).font_weight(FontWeight::SEMIBOLD).text_color(t.text).child(name))
-                .child(div().text_size(px(12.)).text_color(t.text_muted).line_height(px(17.)).child(desc))
+                .child(div().text_size(px(12.)).text_color(t.text_muted).line_height(px(17.)).child(crate::i18n::tr_owned(&desc)))
         };
         let mut builtin = div().flex().flex_wrap().gap_3();
         for (i, b) in crate::templates::BUILTIN.iter().enumerate() {
@@ -278,7 +295,7 @@ impl Workspace {
                             .cursor_pointer()
                             .hover(|s| s.bg(t.hover))
                             .child(icon("x", 12., t.text_muted))
-                            .tooltip(|_, cx| cx.new(|_| Tooltip("删除模板".into())).into())
+                            .tooltip(|_, cx| cx.new(|_| Tooltip(crate::i18n::tr("删除模板").into())).into())
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 cx.stop_propagation();
                                 this.store.delete_template(&id2);
@@ -325,17 +342,17 @@ impl Workspace {
                     } else {
                         "插入模板"
                     }))
-                    .child(div().text_size(px(12.)).text_color(t.text_muted).child("{{今天}} {{本周}} {{时间}} 等变量会自动替换为当前日期"))
-                    .child(div().mt_1().text_size(px(13.)).text_color(t.text_secondary).child("内置模板"))
+                    .child(div().text_size(px(12.)).text_color(t.text_muted).child(crate::i18n::tr("{{今天}} {{本周}} {{时间}} 等变量会自动替换为当前日期")))
+                    .child(div().mt_1().text_size(px(13.)).text_color(t.text_secondary).child(crate::i18n::tr("内置模板")))
                     .child(builtin)
-                    .when(has_mine, |d| d.child(div().mt_2().text_size(px(13.)).text_color(t.text_secondary).child("我的模板")).child(mine))
+                    .when(has_mine, |d| d.child(div().mt_2().text_size(px(13.)).text_color(t.text_secondary).child(crate::i18n::tr("我的模板"))).child(mine))
                     .when(!has_mine, |d| {
                         d.child(
                             div()
                                 .mt_2()
                                 .text_size(px(12.))
                                 .text_color(t.text_muted)
-                                .child("提示：在文档右上角「⋯」菜单中选择「另存为模板」，即可把任意文档变成自己的模板"),
+                                .child(crate::i18n::tr("提示：在文档右上角「⋯」菜单中选择「另存为模板」，即可把任意文档变成自己的模板")),
                         )
                     }),
             )
@@ -407,11 +424,20 @@ impl Workspace {
                         .flex()
                         .flex_col()
                         .gap_2()
-                        .child(div().text_size(px(17.)).font_weight(FontWeight::BOLD).text_color(t.text).child("关联已有多维表格"))
-                        .child(div().text_size(px(12.)).text_color(t.text_muted).child("插入的是同一份数据：在任意一处修改，其他文档里的这个多维表格同步更新"))
+                        .child(div().text_size(px(17.)).font_weight(FontWeight::BOLD).text_color(t.text).child(crate::i18n::tr("关联已有多维表格")))
+                        .child(
+                            div()
+                                .text_size(px(12.))
+                                .text_color(t.text_muted)
+                                .child(crate::i18n::tr("插入的是同一份数据：在任意一处修改，其他文档里的这个多维表格同步更新")),
+                        )
                         .when(empty, |d| {
                             d.child(
-                                div().py_4().text_size(px(13.)).text_color(t.text_muted).child("还没有多维表格，先用斜杠菜单「表格 / 看板 / 画册」新建一个"),
+                                div()
+                                    .py_4()
+                                    .text_size(px(13.))
+                                    .text_color(t.text_muted)
+                                    .child(crate::i18n::tr("还没有多维表格，先用斜杠菜单「表格 / 看板 / 画册」新建一个")),
                             )
                         })
                         .children(items),
@@ -442,12 +468,23 @@ impl Workspace {
         let (content, corrupt) = store.load(&current).unwrap_or_else(|| (DocContent::new_empty(""), None));
         let last_title = content.title();
         let editor = cx.new(|cx| Editor::new(store.clone(), current.clone(), content, cx));
+        if store.get_kv(&Self::read_mode_key(&current)).as_deref() == Some("1") {
+            editor.update(cx, |e, cx| e.set_read_only(true, cx));
+        }
+        let css_theme = store.get_kv("css_theme").unwrap_or_default();
         let theme_mode = match store.get_kv("theme").as_deref() {
             Some("light") => ThemeMode::Light,
             Some("dark") => ThemeMode::Dark,
             _ => ThemeMode::System,
         };
-        let sub = cx.subscribe_in(&editor, window, |this, editor, ev: &EditorEvent, _, cx| match ev {
+        let sub = cx.subscribe_in(&editor, window, |this, editor, ev: &EditorEvent, window, cx| match ev {
+            EditorEvent::OpenDoc(id) => {
+                if this.docs.iter().any(|d| &d.id == id && !d.deleted) {
+                    this.open_doc(id, window, cx);
+                } else {
+                    this.show_toast("链接的文档不存在或已在回收站".into(), cx);
+                }
+            }
             EditorEvent::Changed => {
                 let title = editor.read(cx).content.title();
                 if title != this.last_title {
@@ -524,6 +561,9 @@ impl Workspace {
             show_outline,
             focus_mode: false,
             theme_mode,
+            css_theme,
+            theme_problems: vec![],
+            theme_mtime: None,
             switcher: None,
             show_trash: false,
             toast: corrupt.map(|c| corrupt_msg(&c)),
@@ -532,6 +572,8 @@ impl Workspace {
             more_menu: false,
             last_title,
             outline: (0, vec![]),
+            backlinks: (String::new(), 0, vec![]),
+            doc_list_sig: 0,
             outline_scroll: UniformListScrollHandle::new(),
             outline_current: None,
             focused_once: false,
@@ -544,15 +586,46 @@ impl Workspace {
             comments_open: false,
             author_input,
             palette: None,
+            shortcuts_panel: None,
             slides: None,
             present_focus: cx.focus_handle(),
             present_fullscreen: false,
             embed: None,
             _subs: vec![sub, appearance, author_sub],
             _error_poll: Self::poll_store_errors(cx),
+            _theme_watch: Self::watch_theme_file(window, cx),
         };
-        cx.set_global(Theme::for_mode(theme_mode, window.appearance()));
+        let mut ws = ws;
+        ws.set_theme_global(window, cx);
         ws
+    }
+
+    /// 明暗基础色 + 配色主题 CSS → 全局主题。
+    fn set_theme_global(&mut self, window: &Window, cx: &mut Context<Self>) {
+        let mut t = Theme::for_mode(self.theme_mode, window.appearance());
+        self.theme_problems = match crate::theme_css::source(&self.css_theme) {
+            Some(src) => crate::theme_css::apply(&mut t, &src),
+            None => vec!["主题文件读不到了，已用默认配色".into()],
+        };
+        self.theme_mtime = crate::theme_css::user_path(&self.css_theme).and_then(|p| std::fs::metadata(p).ok()?.modified().ok());
+        cx.set_global(t);
+    }
+
+    /// 用户主题文件保存后自动重新加载（每秒看一次修改时间）。
+    fn watch_theme_file(window: &mut Window, cx: &mut Context<Self>) -> Task<()> {
+        cx.spawn_in(window, async move |this: WeakEntity<Workspace>, cx: &mut AsyncWindowContext| loop {
+            cx.background_executor().timer(Duration::from_millis(1000)).await;
+            let alive = this.update_in(cx, |this, window, cx| {
+                let Some(path) = crate::theme_css::user_path(&this.css_theme) else { return };
+                let mtime = std::fs::metadata(path).ok().and_then(|m| m.modified().ok());
+                if mtime != this.theme_mtime {
+                    this.apply_theme(window, cx);
+                }
+            });
+            if alive.is_err() {
+                break;
+            }
+        })
     }
 
     /// 定期取走写库失败的原因并提示（写入在后台线程，失败时界面层不会立刻知道）。
@@ -588,7 +661,7 @@ impl Workspace {
     }
 
     fn apply_theme(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        cx.set_global(Theme::for_mode(self.theme_mode, window.appearance()));
+        self.set_theme_global(window, cx);
         cx.notify();
         self.editor.update(cx, |_, cx| cx.notify());
     }
@@ -598,7 +671,7 @@ impl Workspace {
     }
 
     pub fn show_toast_for(&mut self, msg: String, ms: u64, cx: &mut Context<Self>) {
-        self.toast = Some(msg);
+        self.toast = Some(crate::i18n::tr_owned(&msg));
         self.toast_task = Some(cx.spawn(async move |this: WeakEntity<Workspace>, cx: &mut AsyncApp| {
             cx.background_executor().timer(Duration::from_millis(ms)).await;
             this.update(cx, |this, cx| {
@@ -611,9 +684,66 @@ impl Workspace {
     }
 
     /// 重新读文档列表（先等写队列写完，标题等才是最新的）。
+    /// 文档列表签名：增删、改标题、保存（updated 变化）都会变。
+    fn docs_sig(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        for d in &self.docs {
+            (&d.id, &d.title, d.updated, d.deleted).hash(&mut h);
+        }
+        h.finish()
+    }
+
+    /// 文档列表变了：同步给编辑器的 `@` 菜单（最近修改的在前）。
+    fn sync_doc_list(&mut self, cx: &mut Context<Self>) {
+        let sig = self.docs_sig();
+        if sig == self.doc_list_sig {
+            return;
+        }
+        self.doc_list_sig = sig;
+        let mut docs: Vec<&DocMeta> = self.docs.iter().filter(|d| !d.deleted).collect();
+        docs.sort_by_key(|d| std::cmp::Reverse(d.updated));
+        let list = docs.into_iter().map(|d| (d.id.clone(), d.title.clone())).collect();
+        self.editor.update(cx, |e, _| e.set_doc_list(list));
+    }
+
+    /// 当前文档的反向链接（文档或文档列表变化时重新查询）。
+    fn current_backlinks(&mut self) -> &[(String, String)] {
+        let sig = self.docs_sig();
+        if self.backlinks.0 != self.current || self.backlinks.1 != sig {
+            self.backlinks = (self.current.clone(), sig, self.store.backlinks(&self.current));
+        }
+        &self.backlinks.2
+    }
+
     fn reload_docs(&mut self) {
         self.store.flush();
         self.docs = self.store.list();
+    }
+
+    /// 阅读模式按文档记在键值表里，下次打开同一篇仍是阅读模式。
+    fn read_mode_key(id: &str) -> String {
+        format!("read_only:{id}")
+    }
+
+    fn apply_read_mode(&mut self, cx: &mut Context<Self>) {
+        let on = self.store.get_kv(&Self::read_mode_key(&self.current)).as_deref() == Some("1");
+        self.editor.update(cx, |e, cx| e.set_read_only(on, cx));
+    }
+
+    fn toggle_read_mode(&mut self, _: &ToggleReadMode, _: &mut Window, cx: &mut Context<Self>) {
+        let on = !self.editor.read(cx).is_read_only();
+        self.editor.update(cx, |e, cx| {
+            if on {
+                // 先把未保存的修改写下去，阅读模式的快照就是磁盘上的内容
+                e.save_now(cx);
+            }
+            e.set_read_only(on, cx)
+        });
+        self.store.set_kv(&Self::read_mode_key(&self.current), if on { "1" } else { "" });
+        self.more_menu = false;
+        self.show_toast(if on { "已切换为阅读模式".into() } else { "已切换为编辑模式".into() }, cx);
+        cx.notify();
     }
 
     pub fn open_doc(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
@@ -632,6 +762,7 @@ impl Workspace {
         self.current = id.to_string();
         self.store.set_kv("last_doc", id);
         self.editor.update(cx, |e, cx| e.load(id.to_string(), content, cx));
+        self.apply_read_mode(cx);
         self.reload_docs();
         let mut p = self.docs.iter().find(|d| d.id == id).and_then(|d| d.parent.clone());
         while let Some(pid) = p {
@@ -789,16 +920,20 @@ impl Workspace {
         self.create_doc(None, seed::welcome(), window, cx);
     }
 
-    fn export(&mut self, html: bool, cx: &mut Context<Self>) {
+    /// 导出当前文档：`ext` 为 md / html / xml（飞书 DocxXML）。
+    fn export(&mut self, ext: &'static str, cx: &mut Context<Self>) {
         let (title, body) = {
             let e = self.editor.read(cx);
             let blocks = &e.content.blocks;
             let title = e.content.title();
-            let body = if html { convert::full_html_page(&title, &convert::blocks_to_html(blocks)) } else { convert::blocks_to_md(blocks) };
+            let body = match ext {
+                "html" => convert::full_html_page(&title, &convert::blocks_to_html(blocks)),
+                "xml" => crate::docxml::export(blocks),
+                _ => convert::blocks_to_md(blocks),
+            };
             (title, body)
         };
-        let name =
-            format!("{}.{}", if title.trim().is_empty() { "未命名文档".to_string() } else { title.replace(['/', ':'], "-") }, if html { "html" } else { "md" });
+        let name = format!("{}.{ext}", if title.trim().is_empty() { "未命名文档".to_string() } else { title.replace(['/', ':'], "-") });
         let dir = dirs::download_dir().unwrap_or_else(std::env::temp_dir);
         let rx = cx.prompt_for_new_path(&dir, Some(&name));
         cx.spawn(async move |this: WeakEntity<Workspace>, cx: &mut AsyncApp| {
@@ -819,11 +954,15 @@ impl Workspace {
     }
 
     fn export_md(&mut self, _: &ExportMarkdown, _: &mut Window, cx: &mut Context<Self>) {
-        self.export(false, cx)
+        self.export("md", cx)
     }
 
     fn export_html(&mut self, _: &ExportHtml, _: &mut Window, cx: &mut Context<Self>) {
-        self.export(true, cx)
+        self.export("html", cx)
+    }
+
+    fn export_docxml(&mut self, _: &ExportDocxXml, _: &mut Window, cx: &mut Context<Self>) {
+        self.export("xml", cx)
     }
 
     /// 导出完整备份（数据库 + assets）为一个 zip。
@@ -890,10 +1029,25 @@ impl Workspace {
 
     fn import_files(&mut self, paths: Vec<std::path::PathBuf>, window: &mut Window, cx: &mut Context<Self>) {
         let mut n = 0;
+        let mut failed = vec![];
         for p in paths {
             let Ok(s) = std::fs::read_to_string(&p) else { continue };
-            let mut blocks = convert::md_to_blocks(&s);
             let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("导入的文档").to_string();
+            // 飞书 / quiet.md 的 DocxXML
+            if p.extension().is_some_and(|e| e.eq_ignore_ascii_case("xml")) {
+                match crate::docxml::import(&s) {
+                    Ok(mut blocks) => {
+                        if blocks[0].text.is_empty() {
+                            blocks[0].text = crate::model::RichText::plain(stem);
+                        }
+                        self.create_doc(None, DocContent::from_blocks(blocks), window, cx);
+                        n += 1;
+                    }
+                    Err(e) => failed.push(format!("{stem}：{e}")),
+                }
+                continue;
+            }
+            let mut blocks = convert::md_to_blocks(&s);
             // 首个一级标题作为文档标题
             if let Some(first) = blocks.first() {
                 if first.kind == (BlockKind::Heading { level: 1 }) {
@@ -908,7 +1062,9 @@ impl Workspace {
             self.create_doc(None, DocContent::from_blocks(blocks), window, cx);
             n += 1;
         }
-        if n > 0 {
+        if let Some(first) = failed.first() {
+            self.show_toast_for(format!("有 {} 个文件没能导入（{first}）", failed.len()), 6000, cx);
+        } else if n > 0 {
             self.show_toast(format!("已导入 {n} 篇文档"), cx);
         }
     }
@@ -966,7 +1122,7 @@ impl Workspace {
         let q = s.input.read(cx).text();
         let results = if q.trim().is_empty() {
             let mut recent: Vec<&DocMeta> = self.docs.iter().filter(|d| !d.deleted).collect();
-            recent.sort_by(|a, b| b.updated.cmp(&a.updated));
+            recent.sort_by_key(|d| std::cmp::Reverse(d.updated));
             recent.into_iter().take(12).map(|d| (d.id.clone(), d.title.clone(), String::new())).collect()
         } else {
             self.store.search(q.trim(), 30)
@@ -1080,7 +1236,7 @@ impl Workspace {
                                     .rounded(px(4.))
                                     .hover(|s| s.bg(t.hover))
                                     .child(icon("plus", 14., t.text_secondary))
-                                    .tooltip(|_, cx| cx.new(|_| Tooltip("新建子文档".into())).into())
+                                    .tooltip(|_, cx| cx.new(|_| Tooltip(crate::i18n::tr("新建子文档").into())).into())
                                     .on_click(cx.listener(move |this, _, window, cx| {
                                         cx.stop_propagation();
                                         this.create_doc(Some(id2.clone()), DocContent::new_empty(""), window, cx);
@@ -1096,7 +1252,7 @@ impl Workspace {
                                     .rounded(px(4.))
                                     .hover(|s| s.bg(t.hover))
                                     .child(icon("trash", 13., t.text_secondary))
-                                    .tooltip(|_, cx| cx.new(|_| Tooltip("移到回收站".into())).into())
+                                    .tooltip(|_, cx| cx.new(|_| Tooltip(crate::i18n::tr("移到回收站").into())).into())
                                     .on_click(cx.listener(move |this, _, window, cx| {
                                         cx.stop_propagation();
                                         this.trash_doc_id(id3.clone(), window, cx);
@@ -1118,7 +1274,7 @@ impl Workspace {
         self.render_tree(None, 0, &map, t, &mut rows, cx);
         let trashed: Vec<&DocMeta> = self.docs.iter().filter(|d| d.deleted).collect();
         let trash_count = trashed.len();
-        let nav_item = |id: &'static str, ic: &'static str, label: &'static str, hint: &'static str| {
+        let nav_item = |id: &'static str, ic: &'static str, label: &'static str, hint: String| {
             div()
                 .id(id)
                 .flex()
@@ -1134,7 +1290,7 @@ impl Workspace {
                 .text_color(t.text)
                 .hover(|s| s.bg(t.hover))
                 .child(icon(ic, 15., t.text_secondary))
-                .child(div().flex_1().child(label))
+                .child(div().flex_1().child(crate::i18n::tr(label)))
                 .child(div().text_size(px(11.)).text_color(t.text_muted).child(hint))
         };
         let theme_icon = match self.theme_mode {
@@ -1173,7 +1329,11 @@ impl Workspace {
                         .flex()
                         .flex_col()
                         .child(div().text_size(px(16.)).font_weight(FontWeight::SEMIBOLD).text_color(t.text).child(crate::store::APP_NAME))
-                        .child(div().text_size(px(11.)).text_color(t.text_muted).child(format!("{} · 本地文档", crate::store::APP_NAME_EN))),
+                        .child(div().text_size(px(11.)).text_color(t.text_muted).child(format!(
+                            "{} · {}",
+                            crate::store::APP_NAME_EN,
+                            crate::i18n::tr("本地文档")
+                        ))),
                 ),
             )
             .child(
@@ -1196,12 +1356,15 @@ impl Workspace {
                     .text_size(px(13.))
                     .text_color(t.text_muted)
                     .child(icon("search", 14., t.text_muted))
-                    .child(div().flex_1().child("搜索"))
-                    .child(div().text_size(px(11.)).child("⌘P"))
+                    .child(div().flex_1().child(crate::i18n::tr("搜索")))
+                    .child(div().text_size(px(11.)).child(crate::shortcuts::hint("stonebrook::QuickOpen", cx)))
                     .on_click(cx.listener(|this, _, w, cx| this.quick_open(&QuickOpen, w, cx))),
             )
-            .child(nav_item("nav-new", "plus", "新建文档", "⌘N").on_click(cx.listener(|this, _, w, cx| this.new_doc(&NewDoc, w, cx))))
-            .child(div().px(px(18.)).pt(px(14.)).pb(px(6.)).text_size(px(12.)).text_color(t.text_muted).child("我的文档"))
+            .child(
+                nav_item("nav-new", "plus", "新建文档", crate::shortcuts::hint("stonebrook::NewDoc", cx))
+                    .on_click(cx.listener(|this, _, w, cx| this.new_doc(&NewDoc, w, cx))),
+            )
+            .child(div().px(px(18.)).pt(px(14.)).pb(px(6.)).text_size(px(12.)).text_color(t.text_muted).child(crate::i18n::tr("我的文档")))
             .child(div().id("tree").flex_1().min_h(px(0.)).overflow_y_scroll().pb_2().children(rows))
             .when(self.show_trash, |d| {
                 d.child(
@@ -1212,7 +1375,9 @@ impl Workspace {
                         .border_t_1()
                         .border_color(t.border)
                         .py_1()
-                        .when(trashed.is_empty(), |d| d.child(div().px(px(18.)).py_2().text_size(px(12.)).text_color(t.text_muted).child("回收站是空的")))
+                        .when(trashed.is_empty(), |d| {
+                            d.child(div().px(px(18.)).py_2().text_size(px(12.)).text_color(t.text_muted).child(crate::i18n::tr("回收站是空的")))
+                        })
                         .children(trashed.iter().map(|d| {
                             let (a, b) = (d.id.clone(), d.id.clone());
                             div()
@@ -1278,7 +1443,7 @@ impl Workspace {
                             .when(self.show_trash, |d| d.bg(t.hover))
                             .hover(|s| s.bg(t.hover))
                             .child(icon("trash", 14., t.text_secondary))
-                            .child(format!("回收站{}", if trash_count > 0 { format!(" · {trash_count}") } else { String::new() }))
+                            .child(format!("{}{}", crate::i18n::tr("回收站"), if trash_count > 0 { format!(" · {trash_count}") } else { String::new() }))
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.show_trash = !this.show_trash;
                                 cx.notify();
@@ -1297,6 +1462,7 @@ impl Workspace {
         let chars = self.editor.update(cx, |e, _| e.char_count());
         let editor = self.editor.read(cx);
         let saved = editor.is_saved();
+        let read_only = editor.is_read_only();
         // 面包屑：祖先文档
         let mut crumbs: Vec<(String, String)> = Vec::new();
         let mut p = self.docs.iter().find(|d| d.id == self.current).and_then(|d| d.parent.clone());
@@ -1375,10 +1541,29 @@ impl Workspace {
                     .gap(px(6.))
                     .text_size(px(12.))
                     .text_color(t.text_muted)
+                    .when(read_only, |d| {
+                        d.child(
+                            div()
+                                .id("read-mode-pill")
+                                .px(px(8.))
+                                .py(px(2.))
+                                .rounded(px(10.))
+                                .bg(t.hover)
+                                .text_color(t.text_secondary)
+                                .cursor_pointer()
+                                .hover(|s| s.text_color(t.accent))
+                                .child(crate::i18n::tr("阅读模式"))
+                                .on_click(cx.listener(|this, _, w, cx| this.toggle_read_mode(&ToggleReadMode, w, cx))),
+                        )
+                    })
                     .child(div().size(px(6.)).rounded_full().bg(if saved { t.fg_palette[4] } else { t.fg_palette[2] }))
-                    .child(if saved { "已保存到本地" } else { "保存中…" })
+                    .child(crate::i18n::tr(if saved { "已保存到本地" } else { "保存中…" }))
                     .child(div().text_color(t.border_strong).child("·"))
-                    .child(format!("{} 字", fmt_num(chars))),
+                    .child(if crate::i18n::english() {
+                        format!("{} char{}", fmt_num(chars), if chars == 1 { "" } else { "s" })
+                    } else {
+                        format!("{} 字", fmt_num(chars))
+                    }),
             )
             .child(div().w(px(8.)))
             .child({
@@ -1445,7 +1630,7 @@ impl Workspace {
     }
 
     fn render_more_menu(&self, t: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
-        let item = |id: &'static str, ic: &'static str, label: &'static str, hint: &'static str| {
+        let item = |id: &'static str, ic: &'static str, label: &'static str, hint: String| {
             div()
                 .id(id)
                 .flex()
@@ -1458,7 +1643,7 @@ impl Workspace {
                 .cursor_pointer()
                 .hover(|s| s.bg(t.hover))
                 .child(icon(ic, 15., t.text_secondary))
-                .child(div().flex_1().child(label))
+                .child(div().flex_1().child(crate::i18n::tr(label)))
                 .child(div().text_size(px(11.)).text_color(t.text_muted).child(hint))
         };
         let sep = || div().h(px(1.)).mx(px(6.)).my(px(4.)).bg(t.border);
@@ -1483,38 +1668,52 @@ impl Workspace {
             .shadow_lg()
             .text_size(px(13.))
             .text_color(t.text)
-            .child(item("m-sub", "plus", "新建子文档", "⇧⌘N").on_click(act!(NewSubDoc)))
-            .child(item("m-img", "image", "插入图片…", "").on_click(cx.listener(|this, _, w, cx| {
+            .child(item("m-sub", "plus", "新建子文档", crate::shortcuts::hint("stonebrook::NewSubDoc", cx)).on_click(act!(NewSubDoc)))
+            .child(item("m-img", "image", "插入图片…", String::new()).on_click(cx.listener(|this, _, w, cx| {
                 this.more_menu = false;
                 this.editor.update(cx, |e, cx| e.pick_images(w, cx));
             })))
             .child(sep())
-            .child(item("m-tpl", "layout-template", "从模板新建…", "").on_click(cx.listener(|this, _, _, cx| this.open_templates(true, cx))))
-            .child(item("m-save-tpl", "layout-template", "另存为模板", "").on_click(cx.listener(|this, _, _, cx| this.save_as_template(cx))))
-            .child(item("m-mind", "mindmap", "以思维导图查看", "").on_click(cx.listener(|this, _, w, cx| {
+            .child(item("m-tpl", "layout-template", "从模板新建…", String::new()).on_click(cx.listener(|this, _, _, cx| this.open_templates(true, cx))))
+            .child(item("m-save-tpl", "layout-template", "另存为模板", String::new()).on_click(cx.listener(|this, _, _, cx| this.save_as_template(cx))))
+            .child(item("m-mind", "mindmap", "以思维导图查看", String::new()).on_click(cx.listener(|this, _, w, cx| {
                 this.more_menu = false;
                 this.open_doc_mindmap(w, cx);
             })))
             .child(sep())
-            .child(item("m-imp", "upload", "导入 Markdown…", "⌘O").on_click(act!(ImportMarkdown)))
-            .child(item("m-md", "download", "导出为 Markdown", "⇧⌘E").on_click(act!(ExportMarkdown)))
-            .child(item("m-html", "download", "导出为 HTML", "").on_click(act!(ExportHtml)))
-            .child(item("m-pdf", "download", "导出为 PDF", "").on_click(act!(ExportPdf)))
-            .child(item("m-bk", "download", "导出完整备份…", "").on_click(act!(ExportBackup)))
-            .child(item("m-restore", "upload", "从备份恢复…", "").on_click(act!(RestoreBackup)))
+            .child(
+                item("m-imp", "upload", "导入 Markdown / 飞书 DocxXML…", crate::shortcuts::hint("stonebrook::ImportMarkdown", cx))
+                    .on_click(act!(ImportMarkdown)),
+            )
+            .child(item("m-md", "download", "导出为 Markdown", crate::shortcuts::hint("stonebrook::ExportMarkdown", cx)).on_click(act!(ExportMarkdown)))
+            .child(item("m-html", "download", "导出为 HTML", String::new()).on_click(act!(ExportHtml)))
+            .child(item("m-docxml", "download", "导出为飞书 DocxXML", String::new()).on_click(act!(ExportDocxXml)))
+            .child(item("m-pdf", "download", "导出为 PDF", String::new()).on_click(act!(ExportPdf)))
+            .child(item("m-bk", "download", "导出完整备份…", String::new()).on_click(act!(ExportBackup)))
+            .child(item("m-restore", "upload", "从备份恢复…", String::new()).on_click(act!(RestoreBackup)))
             .child(sep())
-            .child(item("m-present", "monitor", "演示模式", "F5").on_click(act!(Present)))
-            .child(item("m-cmd", "command", "命令面板", "⇧⌘P").on_click(act!(CommandPalette)))
-            .child(item("m-set", "settings", "设置", "⌘,").on_click(act!(OpenSettings)))
+            .child(item("m-present", "monitor", "演示模式", crate::shortcuts::hint("stonebrook::Present", cx)).on_click(act!(Present)))
+            .child(
+                item(
+                    "m-read",
+                    "book-open",
+                    if self.editor.read(cx).is_read_only() { "切换为编辑模式" } else { "切换为阅读模式" },
+                    crate::shortcuts::hint("stonebrook::ToggleReadMode", cx),
+                )
+                .on_click(act!(ToggleReadMode)),
+            )
+            .child(item("m-cmd", "command", "命令面板", crate::shortcuts::hint("stonebrook::CommandPalette", cx)).on_click(act!(CommandPalette)))
+            .child(item("m-keys", "command", "快捷键", crate::shortcuts::hint("stonebrook::ShowShortcuts", cx)).on_click(act!(ShowShortcuts)))
+            .child(item("m-set", "settings", "设置", crate::shortcuts::hint("stonebrook::OpenSettings", cx)).on_click(act!(OpenSettings)))
             .child(sep())
-            .child(item("m-perf", "activity", "性能面板", "⌥⌘P").on_click(act!(TogglePerf)))
+            .child(item("m-perf", "activity", "性能面板", crate::shortcuts::hint("stonebrook::TogglePerf", cx)).on_click(act!(TogglePerf)))
             .when(cfg!(feature = "dev"), |d| {
-                d.child(item("m-stress", "zap", "生成百万字压测文档", "").on_click(act!(StressTest)))
-                    .child(item("m-bstress", "zap", "生成 10 万行多维表格压测", "").on_click(act!(BaseStressTest)))
+                d.child(item("m-stress", "zap", "生成百万字压测文档", String::new()).on_click(act!(StressTest)))
+                    .child(item("m-bstress", "zap", "生成 10 万行多维表格压测", String::new()).on_click(act!(BaseStressTest)))
             })
-            .child(item("m-welcome", "feather", "打开欢迎文档", "").on_click(act!(OpenWelcome)))
+            .child(item("m-welcome", "feather", "打开欢迎文档", String::new()).on_click(act!(OpenWelcome)))
             .child(sep())
-            .child(item("m-trash", "trash", "移到回收站", "").on_click(act!(TrashDoc)))
+            .child(item("m-trash", "trash", "移到回收站", String::new()).on_click(act!(TrashDoc)))
             .on_mouse_down_out(cx.listener(|this, _, _, cx| {
                 this.more_menu = false;
                 cx.notify();
@@ -1572,7 +1771,7 @@ impl Workspace {
                                 .pt(px(20.))
                                 .text_size(px(12.5))
                                 .text_color(t.text_muted)
-                                .child("还没有评论。选中文字或图片后，用块菜单或图片工具栏的「评论」添加。"),
+                                .child(crate::i18n::tr("还没有评论。选中文字或图片后，用块菜单或图片工具栏的「评论」添加。")),
                         )
                     })
                     .children(list.into_iter().zip(places).map(|(c, place)| {
@@ -1632,7 +1831,7 @@ impl Workspace {
                                             .cursor_pointer()
                                             .text_color(t.text_muted)
                                             .hover(|s| s.bg(t.hover))
-                                            .child("删除")
+                                            .child(crate::i18n::tr("删除"))
                                             .on_click(cx.listener(move |this, _, _, cx| {
                                                 cx.stop_propagation();
                                                 this.editor.update(cx, |e, cx| e.remove_comment(&id2, cx));
@@ -1651,7 +1850,9 @@ impl Workspace {
                                     .when(resolved, |d| d.line_through())
                                     .child(c.body.clone()),
                             )
-                            .when(place.is_none(), |d| d.child(div().text_size(px(11.)).text_color(t.text_muted).child("原文已删除（撤销可找回）")))
+                            .when(place.is_none(), |d| {
+                                d.child(div().text_size(px(11.)).text_color(t.text_muted).child(crate::i18n::tr("原文已删除（撤销可找回）")))
+                            })
                     })),
             )
     }
@@ -1698,11 +1899,11 @@ impl Workspace {
             .pt(px(8.))
             .pr(px(12.))
             .child(div().px(px(12.)).pb(px(8.)).text_size(px(12.)).text_color(t.text_muted).child(if n > 0 {
-                format!("大纲 · {n}")
+                format!("{} · {n}", crate::i18n::tr("大纲"))
             } else {
-                "大纲".into()
+                crate::i18n::tr("大纲").into()
             }))
-            .when(n == 0, |d| d.child(div().px(px(12.)).text_size(px(12.)).text_color(t.text_muted).child("添加标题后，这里会显示文档大纲")))
+            .when(n == 0, |d| d.child(div().px(px(12.)).text_size(px(12.)).text_color(t.text_muted).child(crate::i18n::tr("添加标题后，这里会显示文档大纲"))))
             .when(n > 0, |d| {
                 d.child(
                     div().flex_1().min_h(px(0.)).border_l_1().border_color(border).child(
@@ -1745,6 +1946,48 @@ impl Workspace {
                     ),
                 )
             })
+            .child(self.render_backlinks(t, cx))
+    }
+
+    /// 大纲下方：引用了当前文档的文档，点击打开。
+    fn render_backlinks(&mut self, t: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
+        let links = self.current_backlinks().to_vec();
+        div()
+            .flex_none()
+            .mt(px(12.))
+            .pt(px(10.))
+            .pb(px(16.))
+            .border_t_1()
+            .border_color(t.border)
+            .child(div().px(px(12.)).pb(px(6.)).text_size(px(12.)).text_color(t.text_muted).child(if links.is_empty() {
+                crate::i18n::tr("反向链接").to_string()
+            } else {
+                format!("{} · {}", crate::i18n::tr("反向链接"), links.len())
+            }))
+            .when(links.is_empty(), |d| {
+                d.child(div().px(px(12.)).text_size(px(12.)).text_color(t.text_muted).child(crate::i18n::tr("在其他文档里输入 @ 引用本文，会显示在这里")))
+            })
+            .children(links.into_iter().take(30).enumerate().map(|(k, (id, title))| {
+                div()
+                    .id(("backlink", k))
+                    .flex()
+                    .items_center()
+                    .gap(px(6.))
+                    .px(px(12.))
+                    .h(px(28.))
+                    .rounded(px(5.))
+                    .cursor_pointer()
+                    .text_size(px(13.))
+                    .text_color(t.text_secondary)
+                    .hover(|s| s.bg(t.hover).text_color(t.text))
+                    .child(icon("file", 13., t.text_muted))
+                    .child(div().flex_1().overflow_hidden().whitespace_nowrap().text_ellipsis().child(if title.trim().is_empty() {
+                        "未命名文档".to_string()
+                    } else {
+                        title
+                    }))
+                    .on_click(cx.listener(move |this, _, w, cx| this.open_doc(&id, w, cx)))
+            }))
     }
 
     fn render_switcher(&self, t: &Theme, cx: &mut Context<Self>) -> Option<impl IntoElement> {
@@ -1800,7 +2043,7 @@ impl Workspace {
                                     }))
                                 })
                                 .when(q.trim().is_empty() && !s.results.is_empty(), |d| {
-                                    d.child(div().px_3().pt_1().pb(px(4.)).text_size(px(11.)).text_color(t.text_muted).child("最近编辑"))
+                                    d.child(div().px_3().pt_1().pb(px(4.)).text_size(px(11.)).text_color(t.text_muted).child(crate::i18n::tr("最近编辑")))
                                 })
                                 .children(s.results.iter().enumerate().map(|(i, (id, title, snippet))| {
                                     let id = id.clone();
@@ -1845,7 +2088,7 @@ impl Workspace {
                                                     )
                                                 }),
                                         )
-                                        .when(sel, |d| d.child(div().text_size(px(11.)).text_color(t.text_muted).child("↵ 打开")))
+                                        .when(sel, |d| d.child(div().text_size(px(11.)).text_color(t.text_muted).child(crate::i18n::tr("↵ 打开"))))
                                         .on_click(cx.listener(move |this, _, w, cx| {
                                             this.close_switcher(w, cx);
                                             this.open_doc(&id, w, cx);
@@ -1863,9 +2106,9 @@ impl Workspace {
                                 .border_color(t.border)
                                 .text_size(px(11.))
                                 .text_color(t.text_muted)
-                                .child("↑↓ 选择")
-                                .child("↵ 打开")
-                                .child("esc 关闭")
+                                .child(crate::i18n::tr("↑↓ 选择"))
+                                .child(crate::i18n::tr("↵ 打开"))
+                                .child(crate::i18n::tr("esc 关闭"))
                                 .child(div().flex_1())
                                 .child(format!("{} 篇文档", self.docs.iter().filter(|d| !d.deleted).count())),
                         ),
@@ -1874,7 +2117,8 @@ impl Workspace {
     }
 
     fn render_about(&self, t: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
-        let line = |ic: &'static str, s: &'static str| div().flex().flex_row().items_center().gap(px(8.)).child(icon(ic, 14., t.accent)).child(s);
+        let line =
+            |ic: &'static str, s: &'static str| div().flex().flex_row().items_center().gap(px(8.)).child(icon(ic, 14., t.accent)).child(crate::i18n::tr(s));
         div()
             .absolute()
             .inset_0()
@@ -1904,9 +2148,9 @@ impl Workspace {
                     .items_center()
                     .gap(px(6.))
                     .child(logo(96.))
-                    .child(div().mt(px(8.)).text_size(px(24.)).font_weight(FontWeight::BOLD).text_color(t.text).child("石渠"))
+                    .child(div().mt(px(8.)).text_size(px(24.)).font_weight(FontWeight::BOLD).text_color(t.text).child(crate::i18n::tr("石渠")))
                     .child(div().text_size(px(13.)).text_color(t.text_muted).child(format!("Stonebrook {}", env!("CARGO_PKG_VERSION"))))
-                    .child(div().mt(px(10.)).text_size(px(15.)).text_color(t.text_secondary).child("藏书于石，引水成渠"))
+                    .child(div().mt(px(10.)).text_size(px(15.)).text_color(t.text_secondary).child(crate::i18n::tr("藏书于石，引水成渠")))
                     .child(
                         div()
                             .mt(px(18.))
@@ -1922,7 +2166,7 @@ impl Workspace {
                             .child(line("copy", "从网页粘贴，格式原样还原"))
                             .child(line("workflow", "图表、公式、画板、思维导图、电子表格")),
                     )
-                    .child(div().mt(px(20.)).text_size(px(11.)).text_color(t.text_muted).child("点击任意处关闭")),
+                    .child(div().mt(px(20.)).text_size(px(11.)).text_color(t.text_muted).child(crate::i18n::tr("点击任意处关闭"))),
             )
     }
 
@@ -1946,6 +2190,7 @@ impl Workspace {
 
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.sync_doc_list(cx);
         if let Some((kind, id)) = self.pending_embed.take() {
             self.open_embed(&kind, &id, window, cx);
         }
@@ -1994,6 +2239,9 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::restore_backup))
             .on_action(cx.listener(Self::present))
             .on_action(cx.listener(Self::toggle_perf))
+            .on_action(cx.listener(Self::toggle_read_mode))
+            .on_action(cx.listener(Self::show_shortcuts))
+            .on_action(cx.listener(Self::export_docxml))
             .when(cfg!(feature = "dev"), |d| d.on_action(cx.listener(Self::stress_test)).on_action(cx.listener(Self::base_stress_test)))
             .on_action(cx.listener(Self::focus_mode))
             .on_action(cx.listener(Self::export_md))
@@ -2022,6 +2270,7 @@ impl Render for Workspace {
             .children(self.render_base_picker(&t, cx))
             .when(self.settings_open, |d| d.child(self.render_settings(&t, cx)))
             .children(self.render_palette(&t, cx))
+            .children(self.render_shortcuts_panel(&t, cx))
             .children(self.render_present(window, cx))
             .when_some(self.embed.as_ref().map(|e| e.0.clone()), |d, v| d.child(div().absolute().inset_0().occlude().child(v)))
             .children(self.render_toast(&t))

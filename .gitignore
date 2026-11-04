@@ -4,3 +4,5 @@ assets/AppIcon.iconset/
 .DS_Store
 image.png
 *.log
+.venv/
+__pycache__/

@@ -1,0 +1,24 @@
+# 阅读模式：⌥⌘R 进入后，键入、退格、粘贴都不改文档；顶栏显示「阅读模式」，再按一次回到编辑。
+rmove 4 850
+key cmd-n
+wait 300
+type 阅读模式
+key enter
+type 这一段在阅读模式下不能被修改。
+key enter
+type [] 待办也不能勾选
+wait 300
+key cmd-alt-r
+wait 300
+type 不应出现的文字
+key backspace
+key backspace
+key enter
+key cmd-v
+wait 1500
+shot r1-read-only
+key cmd-alt-r
+wait 300
+type （回到编辑后可以输入）
+wait 1500
+shot r2-editable

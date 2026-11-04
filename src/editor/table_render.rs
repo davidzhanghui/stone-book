@@ -85,7 +85,7 @@ impl Editor {
                         .cursor_pointer()
                         .when(!active, |d| d.invisible())
                         .hover(|s| s.bg(t.accent))
-                        .tooltip(|_, cx| cx.new(|_| Tooltip("选中整张表格".into())).into())
+                        .tooltip(|_, cx| cx.new(|_| Tooltip(crate::i18n::tr("选中整张表格").into())).into())
                         .on_mouse_down(
                             MouseButton::Left,
                             cx.listener(move |this, _, window, cx| {
@@ -262,7 +262,8 @@ impl Editor {
         }
 
         // ── 覆盖层（依赖上一帧几何）──
-        if geo_ok && active {
+        // 阅读模式：不显示行列手柄、列宽拖柄与插入「+」
+        if geo_ok && active && !self.read_only {
             let ox = geo.grid.left();
             let oy = geo.grid.top();
             let body_top = geo.rows[0].top() - oy;
@@ -552,11 +553,11 @@ impl Editor {
                                 .justify_between()
                                 .gap_2()
                                 .text_size(px(12.))
-                                .child(div().text_color(t.text_secondary).child("插入支持富文本的表格"))
+                                .child(div().text_color(t.text_secondary).child(crate::i18n::tr("插入支持富文本的表格")))
                                 .child(div().text_color(t.accent).font_weight(FontWeight::MEDIUM).child(format!("{cur_r} × {cur_c}"))),
                         )
                         .child(grid)
-                        .child(div().text_size(px(11.)).text_color(t.text_muted).child("移动鼠标选择行列，点击插入")),
+                        .child(div().text_size(px(11.)).text_color(t.text_muted).child(crate::i18n::tr("移动鼠标选择行列，点击插入"))),
                 ),
             )
             .with_priority(4)
@@ -639,7 +640,7 @@ impl Editor {
                     .on_mouse_down(MouseButton::Left, self.slot_click(ix, c, cx))
             }))
             .children(toolbar)
-            .when(n == 0, |d| d.child("空分栏"))
+            .when(n == 0, |d| d.child(crate::i18n::tr("空分栏")))
             .into_any_element()
     }
 }

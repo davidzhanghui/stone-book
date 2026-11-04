@@ -664,7 +664,7 @@ impl Editor {
                     .child(
                         div().rounded(px(6.)).border_1().border_color(t.accent).px_2().py_1().text_size(px(13.)).line_height(px(22.)).child(ci.input.clone()),
                     )
-                    .child(div().text_size(px(11.)).text_color(t.text_muted).child("↵ 发送 · Esc 取消"))
+                    .child(div().text_size(px(11.)).text_color(t.text_muted).child(crate::i18n::tr("↵ 发送 · Esc 取消")))
                     .into_any_element(),
                 None => div()
                     .id("cm-reply")
@@ -677,7 +677,7 @@ impl Editor {
                     .text_color(t.placeholder)
                     .cursor(CursorStyle::IBeam)
                     .hover(|s| s.border_color(t.accent))
-                    .child("回复…")
+                    .child(crate::i18n::tr("回复…"))
                     .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
                         this.start_comment(ix, ev.position(), window, cx);
                     }))

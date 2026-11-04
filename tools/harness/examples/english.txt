@@ -1,0 +1,21 @@
+# 界面语言：设置里切到 English
+rmove 4 850
+key cmd-,
+wait 500
+shot e1-settings
+rclick 873 436
+wait 500
+shot e2-settings-en
+rclick 897 133
+wait 400
+key cmd-n
+wait 300
+type Hello
+key enter
+type /
+wait 400
+shot e3-slash-en
+key escape
+rclick 1295 26
+wait 400
+shot e4-more-en

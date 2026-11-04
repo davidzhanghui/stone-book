@@ -1,0 +1,20 @@
+# 快捷键面板：⌘/ 打开
+rmove 4 850
+key cmd-/
+wait 400
+shot k1-panel
+# 点「新建文档」进入录制，按 ⌘J
+rclick 396 178
+wait 300
+shot k2-recording
+key cmd-j
+wait 300
+shot k3-changed
+key escape
+wait 300
+# 新按键生效：⌘J 新建文档
+key cmd-j
+wait 300
+type 用 ⌘J 新建的文档
+wait 1500
+shot k4-new-doc

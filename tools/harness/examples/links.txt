@@ -1,0 +1,16 @@
+# 双向链接：新文档里输入 @ 选「欢迎使用石渠」插入链接；打开欢迎文档，右侧大纲下方出现反向链接。
+rmove 4 850
+key cmd-n
+wait 300
+type 读书笔记
+key enter
+type 详见 @欢迎
+wait 400
+shot l1-mention
+key enter
+type 里的快捷键表。
+wait 1500
+shot l2-linked
+rclick 97 237
+wait 1500
+shot l3-backlinks

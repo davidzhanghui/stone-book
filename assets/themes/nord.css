@@ -1,0 +1,74 @@
+/* 北欧：Nord 调色板（https://www.nordtheme.com），冷静的蓝灰。 */
+:root {
+  --theme-name: "北欧";
+  --theme-author: "石渠";
+  --frost: #5e81ac;
+  --frost-light: #88c0d0;
+  --aurora-red: #bf616a;
+  --aurora-orange: #d08770;
+  --aurora-yellow: #ebcb8b;
+  --aurora-green: #a3be8c;
+  --aurora-purple: #b48ead;
+}
+
+.light {
+  --bg: #eceff4;
+  --sidebar-bg: #e5e9f0;
+  --panel-bg: #f4f6f9;
+  --border: #d8dee9;
+  --border-strong: #c2cad8;
+  --text: #2e3440;
+  --text-secondary: #4c566a;
+  --text-muted: #7b8496;
+  --placeholder: #a9b1c0;
+  --accent: var(--frost);
+  --accent-soft: #5e81ac1f;
+  --selection: #5e81ac33;
+  --cursor: #2e3440;
+  --code-bg: #e5e9f0;
+  --link: var(--frost);
+  --table-header: #e5e9f0;
+  --drop-line: var(--frost);
+  --color-1: var(--aurora-red);
+  --color-2: var(--aurora-orange);
+  --color-4: #6f8f5a;
+  --color-5: var(--frost);
+  --color-6: var(--aurora-purple);
+  --syntax-keyword: #81a1c1;
+  --syntax-string: #6f8f5a;
+  --syntax-function: var(--frost);
+}
+
+.dark {
+  --bg: #2e3440;
+  --sidebar-bg: #3b4252;
+  --panel-bg: #3b4252;
+  --hover: #eceff412;
+  --border: #434c5e;
+  --border-strong: #4c566a;
+  --text: #eceff4;
+  --text-secondary: #d8dee9;
+  --text-muted: #9aa3b5;
+  --placeholder: #616e88;
+  --accent: var(--frost-light);
+  --accent-soft: #88c0d026;
+  --selection: #88c0d040;
+  --cursor: #eceff4;
+  --code-bg: #3b4252;
+  --inline-code-fg: var(--aurora-orange);
+  --link: var(--frost-light);
+  --table-header: #3b4252;
+  --drop-line: var(--frost-light);
+  --color-1: var(--aurora-red);
+  --color-2: var(--aurora-orange);
+  --color-3: var(--aurora-yellow);
+  --color-4: var(--aurora-green);
+  --color-5: var(--frost-light);
+  --color-6: var(--aurora-purple);
+  --syntax-keyword: #81a1c1;
+  --syntax-string: var(--aurora-green);
+  --syntax-comment: #616e88;
+  --syntax-number: var(--aurora-purple);
+  --syntax-function: var(--frost-light);
+  --syntax-type: var(--aurora-yellow);
+}

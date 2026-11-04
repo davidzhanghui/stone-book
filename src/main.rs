@@ -9,22 +9,28 @@ mod canvas;
 mod clipboard;
 mod convert;
 mod diagram;
+mod docxml;
 mod editor;
 mod highlight;
+mod i18n;
 mod katex_assets;
 mod line_input;
 mod linkcard;
 mod math;
 mod media;
 mod model;
+#[cfg(test)]
+mod model_fixture_tests;
 mod objects;
 mod seed;
 mod settings;
 mod sheet;
+mod shortcuts;
 mod store;
 mod templates;
 mod text_area;
 mod theme;
+mod theme_css;
 mod ui;
 mod webview;
 mod words;
@@ -128,6 +134,8 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("cmd-shift-f", FocusMode, None),
         KeyBinding::new("cmd-shift-d", CycleTheme, None),
         KeyBinding::new("cmd-alt-p", TogglePerf, None),
+        KeyBinding::new("cmd-alt-r", ToggleReadMode, None),
+        KeyBinding::new("cmd-/", ShowShortcuts, None),
         KeyBinding::new("cmd-shift-e", ExportMarkdown, None),
         KeyBinding::new("cmd-o", ImportMarkdown, None),
         KeyBinding::new("cmd-q", Quit, None),
@@ -139,6 +147,11 @@ fn bind_keys(cx: &mut App) {
     base::editor::bind_keys(cx);
 }
 
+/// 改了快捷键后重设菜单：菜单项上显示的按键在设置菜单时从按键映射里取。
+pub fn refresh_menus(cx: &mut App) {
+    cx.set_menus(menus());
+}
+
 fn menus() -> Vec<Menu> {
     #[allow(unused_mut)]
     let mut menus = vec![
@@ -147,8 +160,9 @@ fn menus() -> Vec<Menu> {
             items: vec![
                 MenuItem::action(format!("关于{}", crate::store::APP_NAME), About),
                 MenuItem::separator(),
-                MenuItem::action("设置…", OpenSettings),
-                MenuItem::action("命令面板…", CommandPalette),
+                MenuItem::action(crate::i18n::tr("设置…"), OpenSettings),
+                MenuItem::action(crate::i18n::tr("命令面板…"), CommandPalette),
+                MenuItem::action(crate::i18n::tr("快捷键…"), ShowShortcuts),
                 MenuItem::separator(),
                 MenuItem::os_submenu("服务", SystemMenuType::Services),
                 MenuItem::separator(),
@@ -156,86 +170,87 @@ fn menus() -> Vec<Menu> {
             ],
         },
         Menu {
-            name: "文件".into(),
+            name: crate::i18n::tr("文件").into(),
             items: vec![
-                MenuItem::action("新建文档", NewDoc),
-                MenuItem::action("新建子文档", NewSubDoc),
-                MenuItem::action("快速打开…", QuickOpen),
+                MenuItem::action(crate::i18n::tr("新建文档"), NewDoc),
+                MenuItem::action(crate::i18n::tr("新建子文档"), NewSubDoc),
+                MenuItem::action(crate::i18n::tr("快速打开…"), QuickOpen),
                 MenuItem::separator(),
-                MenuItem::action("导入 Markdown…", ImportMarkdown),
-                MenuItem::action("导出为 Markdown…", ExportMarkdown),
-                MenuItem::action("导出为 HTML…", ExportHtml),
-                MenuItem::action("导出为 PDF…", ExportPdf),
+                MenuItem::action(crate::i18n::tr("导入 Markdown…"), ImportMarkdown),
+                MenuItem::action(crate::i18n::tr("导出为 Markdown…"), ExportMarkdown),
+                MenuItem::action(crate::i18n::tr("导出为 HTML…"), ExportHtml),
+                MenuItem::action(crate::i18n::tr("导出为飞书 DocxXML…"), ExportDocxXml),
+                MenuItem::action(crate::i18n::tr("导出为 PDF…"), ExportPdf),
                 MenuItem::separator(),
-                MenuItem::action("导出完整备份…", ExportBackup),
-                MenuItem::action("从备份恢复…", RestoreBackup),
-                MenuItem::action("演示模式", Present),
+                MenuItem::action(crate::i18n::tr("导出完整备份…"), ExportBackup),
+                MenuItem::action(crate::i18n::tr("从备份恢复…"), RestoreBackup),
+                MenuItem::action(crate::i18n::tr("演示模式"), Present),
                 MenuItem::separator(),
-                MenuItem::action("移到回收站", TrashDoc),
+                MenuItem::action(crate::i18n::tr("移到回收站"), TrashDoc),
             ],
         },
         Menu {
-            name: "编辑".into(),
+            name: crate::i18n::tr("编辑").into(),
             items: vec![
-                MenuItem::action("撤销", Undo),
-                MenuItem::action("重做", Redo),
+                MenuItem::action(crate::i18n::tr("撤销"), Undo),
+                MenuItem::action(crate::i18n::tr("重做"), Redo),
                 MenuItem::separator(),
-                MenuItem::action("剪切", Cut),
-                MenuItem::action("复制", Copy),
-                MenuItem::action("粘贴", Paste),
-                MenuItem::action("粘贴为纯文本", PastePlain),
-                MenuItem::action("全选", SelectAll),
+                MenuItem::action(crate::i18n::tr("剪切"), Cut),
+                MenuItem::action(crate::i18n::tr("复制"), Copy),
+                MenuItem::action(crate::i18n::tr("粘贴"), Paste),
+                MenuItem::action(crate::i18n::tr("粘贴为纯文本"), PastePlain),
+                MenuItem::action(crate::i18n::tr("全选"), SelectAll),
                 MenuItem::separator(),
-                MenuItem::action("查找…", Find),
-                MenuItem::action("查找下一个", FindNext),
-                MenuItem::action("查找上一个", FindPrev),
+                MenuItem::action(crate::i18n::tr("查找…"), Find),
+                MenuItem::action(crate::i18n::tr("查找下一个"), FindNext),
+                MenuItem::action(crate::i18n::tr("查找上一个"), FindPrev),
             ],
         },
         Menu {
-            name: "格式".into(),
+            name: crate::i18n::tr("格式").into(),
             items: vec![
-                MenuItem::action("粗体", Bold),
-                MenuItem::action("斜体", Italic),
-                MenuItem::action("下划线", Underline),
-                MenuItem::action("删除线", Strike),
-                MenuItem::action("行内代码", InlineCode),
-                MenuItem::action("链接…", InsertLink),
+                MenuItem::action(crate::i18n::tr("粗体"), Bold),
+                MenuItem::action(crate::i18n::tr("斜体"), Italic),
+                MenuItem::action(crate::i18n::tr("下划线"), Underline),
+                MenuItem::action(crate::i18n::tr("删除线"), Strike),
+                MenuItem::action(crate::i18n::tr("行内代码"), InlineCode),
+                MenuItem::action(crate::i18n::tr("链接…"), InsertLink),
                 MenuItem::separator(),
-                MenuItem::action("正文", SetText),
-                MenuItem::action("一级标题", SetH1),
-                MenuItem::action("二级标题", SetH2),
-                MenuItem::action("三级标题", SetH3),
-                MenuItem::action("四级标题", SetH4),
-                MenuItem::action("有序列表", SetOrdered),
-                MenuItem::action("无序列表", SetBullet),
-                MenuItem::action("待办事项", SetTodo),
-                MenuItem::action("引用", SetQuote),
-                MenuItem::action("代码块", SetCode),
+                MenuItem::action(crate::i18n::tr("正文"), SetText),
+                MenuItem::action(crate::i18n::tr("一级标题"), SetH1),
+                MenuItem::action(crate::i18n::tr("二级标题"), SetH2),
+                MenuItem::action(crate::i18n::tr("三级标题"), SetH3),
+                MenuItem::action(crate::i18n::tr("四级标题"), SetH4),
+                MenuItem::action(crate::i18n::tr("有序列表"), SetOrdered),
+                MenuItem::action(crate::i18n::tr("无序列表"), SetBullet),
+                MenuItem::action(crate::i18n::tr("待办事项"), SetTodo),
+                MenuItem::action(crate::i18n::tr("引用"), SetQuote),
+                MenuItem::action(crate::i18n::tr("代码块"), SetCode),
                 MenuItem::separator(),
-                MenuItem::action("插入图片…", InsertImage),
-                MenuItem::action("创建块副本", DuplicateBlock),
-                MenuItem::action("上移块", MoveBlockUp),
-                MenuItem::action("下移块", MoveBlockDown),
+                MenuItem::action(crate::i18n::tr("插入图片…"), InsertImage),
+                MenuItem::action(crate::i18n::tr("创建块副本"), DuplicateBlock),
+                MenuItem::action(crate::i18n::tr("上移块"), MoveBlockUp),
+                MenuItem::action(crate::i18n::tr("下移块"), MoveBlockDown),
             ],
         },
         Menu {
-            name: "视图".into(),
+            name: crate::i18n::tr("视图").into(),
             items: vec![
-                MenuItem::action("侧边栏", ToggleSidebar),
-                MenuItem::action("大纲", ToggleOutline),
-                MenuItem::action("专注模式", FocusMode),
-                MenuItem::action("切换深浅色", CycleTheme),
+                MenuItem::action(crate::i18n::tr("侧边栏"), ToggleSidebar),
+                MenuItem::action(crate::i18n::tr("大纲"), ToggleOutline),
+                MenuItem::action(crate::i18n::tr("专注模式"), FocusMode),
+                MenuItem::action(crate::i18n::tr("切换深浅色"), CycleTheme),
                 MenuItem::separator(),
-                MenuItem::action("性能面板", TogglePerf),
-                MenuItem::action("打开欢迎文档", OpenWelcome),
+                MenuItem::action(crate::i18n::tr("性能面板"), TogglePerf),
+                MenuItem::action(crate::i18n::tr("打开欢迎文档"), OpenWelcome),
             ],
         },
     ];
     #[cfg(feature = "dev")]
     if let Some(view) = menus.last_mut() {
         view.items.push(MenuItem::separator());
-        view.items.push(MenuItem::action("生成百万字压测文档", StressTest));
-        view.items.push(MenuItem::action("生成 10 万行多维表格压测", BaseStressTest));
+        view.items.push(MenuItem::action(crate::i18n::tr("生成百万字压测文档"), StressTest));
+        view.items.push(MenuItem::action(crate::i18n::tr("生成 10 万行多维表格压测"), BaseStressTest));
     }
     menus
 }
@@ -291,6 +306,7 @@ fn main() {
         }
     };
     settings::load(&store);
+    i18n::set_english(store.get_kv("lang").as_deref() == Some("en"));
     board::iconlib::warm();
     store::install(store.clone());
     // 后台回收：7 天前起不再被任何文档引用的嵌入对象
@@ -306,6 +322,8 @@ fn main() {
     Application::new().with_assets(ui::Assets).run(move |cx: &mut App| {
         cx.set_global(theme::Theme::light());
         bind_keys(cx);
+        // 记下内置按键作为基准，再叠加用户在快捷键面板里改过的按键
+        shortcuts::init(cx);
         cx.set_menus(menus());
         cx.on_action(|_: &Quit, cx: &mut App| {
             flush_all();

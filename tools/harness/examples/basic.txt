@@ -1,0 +1,45 @@
+# 截图回归基础用例：新建文档、各类块、行内样式、中文换行（避头尾）、斜杠菜单、命令面板。
+# 先把指针挪到窗口边缘的空白处，避免真实鼠标位置以 hover 形式出现在截图里。
+rmove 4 850
+wait 400
+shot 01-start
+
+key cmd-n
+wait 300
+type 截图回归样例
+key enter
+type 这是一段很长的中文正文，用来检验换行时的避头尾规则：逗号、句号、顿号、冒号、分号、问号、叹号、右括号）和右引号”都不应该出现在行首；左括号（和左引号“也不应该留在行尾。再来一句足够长的话，让它在正文栏里折成好几行，看看每一行的开头与结尾是否都符合中文排版的习惯！
+key enter
+type **粗体** 与 *斜体* 与 `行内代码` 与 ~~删除线~~ 结束
+key enter
+type # 一级标题
+key enter
+type - 无序列表一
+key enter
+type 无序列表二
+key enter
+key enter
+type 1. 有序列表
+key enter
+key enter
+type [] 待办事项
+key enter
+key enter
+type > 引用一段话
+key enter
+key enter
+# 停手 0.6 秒后才保存：等保存状态稳定再截图，避免「保存中…」与「已保存」的时机差异
+wait 1500
+shot 02-blocks
+
+type /
+wait 300
+shot 03-slash
+key escape
+
+key cmd-shift-p
+wait 300
+shot 04-palette
+key escape
+wait 1500
+shot 05-after-escape

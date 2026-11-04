@@ -17,7 +17,11 @@ pub fn ordered_numbers(blocks: &[impl std::ops::Deref<Target = Block>]) -> Vec<u
         }
         if b.kind == BlockKind::Ordered {
             counters.truncate(ind + 1);
-            counters[ind] += 1;
+            counters[ind] = match b.num {
+                // 指定编号：从这一项起重新计数
+                Some(n) => n.max(1) as usize,
+                None => counters[ind] + 1,
+            };
             out[i] = counters[ind];
         } else if b.kind.is_list() {
             counters.truncate(ind + 1);
@@ -95,6 +99,11 @@ pub fn rich_to_md(r: &RichText) -> String {
             continue;
         }
         let mut s = md_escape(raw);
+        // 整段都是空白（如加粗的空格）：没有可包的内容，原样输出（否则下面首尾空白重叠会下溢）
+        if s.trim().is_empty() {
+            out.push_str(&s);
+            continue;
+        }
         // 标记不能包住首尾空白，否则 Markdown 不识别
         let lead = s.len() - s.trim_start().len();
         let trail = s.len() - s.trim_end().len();
@@ -872,7 +881,7 @@ pub fn plain_to_blocks(s: &str) -> Vec<Block> {
 
 pub fn html_to_blocks(html: &str, assets_dir: &Path) -> Vec<Block> {
     let doc = scraper::Html::parse_document(html);
-    let mut w = HtmlWalker { b: Builder::default(), lists: Vec::new(), quote: 0, assets_dir };
+    let mut w = HtmlWalker { b: Builder::default(), lists: Vec::new(), quote: 0, assets_dir, callout: false };
     w.walk(doc.root_element(), &Marks::default());
     w.b.flush();
     // 去掉首尾空段落
@@ -905,6 +914,65 @@ struct HtmlWalker<'a> {
     lists: Vec<bool>,
     quote: usize,
     assets_dir: &'a Path,
+    /// 正在飞书高亮块里：里层的 div 并进同一个高亮块（多行），不再各自成块
+    callout: bool,
+}
+
+/// 飞书高亮块的 `data-emoji-id` → 表情（常见的几十个；没收录的用 💡）。
+fn feishu_emoji(id: &str) -> &'static str {
+    match id {
+        "chestnut" => "🌰",
+        "bulb" | "light_bulb" | "idea" => "💡",
+        "warning" | "warn" => "⚠️",
+        "fire" => "🔥",
+        "pushpin" | "pin" => "📌",
+        "white_check_mark" | "check" | "done" => "✅",
+        "exclamation" | "heavy_exclamation_mark" => "❗",
+        "question" => "❓",
+        "memo" | "pencil" => "📝",
+        "dart" | "target" => "🎯",
+        "star" => "⭐",
+        "heart" | "red_heart" => "❤️",
+        "rocket" => "🚀",
+        "tada" | "party" => "🎉",
+        "thumbsup" | "+1" => "👍",
+        "eyes" => "👀",
+        "bell" => "🔔",
+        "book" | "books" => "📖",
+        "calendar" | "date" => "📅",
+        "smile" | "smiley" => "😄",
+        "no_entry" | "prohibited" => "🚫",
+        "information_source" | "info" => "ℹ️",
+        _ => "💡",
+    }
+}
+
+/// 颜色最接近的调色板序号（1 红 … 7 灰），用于飞书高亮块的底色 / 边框色。
+fn nearest_palette(rgb: (u8, u8, u8)) -> u8 {
+    const HUES: [(u8, u8, u8); 7] =
+        [(0xd8, 0x39, 0x31), (0xde, 0x78, 0x02), (0xdc, 0x9b, 0x04), (0x2e, 0xa1, 0x21), (0x24, 0x5b, 0xdb), (0x64, 0x25, 0xd0), (0x8f, 0x95, 0x9e)];
+    // 浅色底：先按亮度拉开，再比色相（直接比 RGB 时浅色都离灰色最近）
+    let norm = |c: (u8, u8, u8)| {
+        let (r, g, b) = (c.0 as f32, c.1 as f32, c.2 as f32);
+        let mx = r.max(g).max(b).max(1.);
+        let mn = r.min(g).min(b);
+        let sat = (mx - mn) / mx;
+        ((r - mn) / (mx - mn + 1.), (g - mn) / (mx - mn + 1.), (b - mn) / (mx - mn + 1.), sat)
+    };
+    let a = norm(rgb);
+    if a.3 < 0.08 {
+        return 7;
+    }
+    (0..6)
+        .min_by(|&i, &j| {
+            let d = |k: usize| {
+                let h = norm(HUES[k]);
+                (a.0 - h.0).powi(2) + (a.1 - h.1).powi(2) + (a.2 - h.2).powi(2)
+            };
+            d(i).total_cmp(&d(j))
+        })
+        .map(|i| i as u8 + 1)
+        .unwrap_or(0)
 }
 
 fn parse_color(s: &str) -> Option<(u8, u8, u8)> {
@@ -1033,9 +1101,30 @@ impl<'a> HtmlWalker<'a> {
             }
             "p" | "div" | "section" | "article" | "header" | "footer" | "main" | "figure" | "figcaption" => {
                 let looks_heading = class.contains("heading-h");
-                if class.contains("callout") {
-                    self.b.open(BlockKind::Callout { emoji: "💡".into(), color: 0 }, 0);
+                if self.callout {
+                    // 高亮块里层：同一块里另起一行，不新建块；里层容器的底色不是文字底色
+                    m.bg = 0;
+                    if !has_block_child(el) && self.b.cur.as_ref().is_some_and(|c| !c.text.is_empty()) && el.text().any(|t| !t.trim().is_empty()) {
+                        self.b.push_raw("\n");
+                    }
                     self.walk(el, &m);
+                } else if class.contains("callout") {
+                    // 飞书：zoneType-calloutBlock > callout-container[data-emoji-id] > callout-block[style] > 正文 div
+                    let all = || std::iter::once(el).chain(el.descendants().filter_map(scraper::ElementRef::wrap));
+                    let emoji = all().find_map(|e| e.value().attr("data-emoji-id")).map(feishu_emoji).unwrap_or("💡");
+                    let style_color = |prop: &str| {
+                        all().filter_map(|e| e.value().attr("style")).find_map(|s| {
+                            s.split(';')
+                                .find_map(|kv| kv.split_once(':').filter(|(k, _)| k.trim().eq_ignore_ascii_case(prop)).and_then(|(_, v)| parse_color(v)))
+                        })
+                    };
+                    let color = style_color("border-color").or_else(|| style_color("background-color")).map(nearest_palette).unwrap_or(0);
+                    self.b.flush();
+                    self.b.open(BlockKind::Callout { emoji: emoji.into(), color }, 0);
+                    self.callout = true;
+                    m.bg = 0;
+                    self.walk(el, &m);
+                    self.callout = false;
                     self.b.flush();
                 } else if looks_heading {
                     let level = class.split("heading-h").nth(1).and_then(|s| s.chars().next()).and_then(|c| c.to_digit(10)).unwrap_or(1) as u8;
@@ -1069,6 +1158,9 @@ impl<'a> HtmlWalker<'a> {
                     el.descendants().filter_map(scraper::ElementRef::wrap).find(|e| e.value().name() == "input" && e.value().attr("type") == Some("checkbox"));
                 let kind = if let Some(cb) = checkbox {
                     BlockKind::Todo { checked: cb.value().attr("checked").is_some() }
+                } else if let Some(state @ ("done" | "undone")) = v.attr("data-list") {
+                    // 飞书待办：<li data-list="done|undone">
+                    BlockKind::Todo { checked: state == "done" }
                 } else if class.contains("todo") || class.contains("task") {
                     BlockKind::Todo { checked: class.contains("done") || class.contains("checked") }
                 } else if ordered {
@@ -1091,12 +1183,15 @@ impl<'a> HtmlWalker<'a> {
                 self.quote -= 1;
             }
             "pre" => {
-                let lang = el
-                    .descendants()
-                    .filter_map(scraper::ElementRef::wrap)
-                    .filter_map(|e| e.value().attr("class").map(|c| c.to_string()))
-                    .chain(v.attr("class").map(|c| c.to_string()))
-                    .find_map(|c| c.split_whitespace().find_map(|p| p.strip_prefix("language-").map(|s| s.to_string())))
+                let all = || std::iter::once(el).chain(el.descendants().filter_map(scraper::ElementRef::wrap));
+                // 飞书：data-lark-language；其他站点：data-lang / data-language / class="language-xx"
+                let lang = all()
+                    .find_map(|e| ["data-lark-language", "data-lang", "data-language"].iter().find_map(|k| e.value().attr(k).map(str::to_string)))
+                    .or_else(|| {
+                        all()
+                            .filter_map(|e| e.value().attr("class").map(|c| c.to_string()))
+                            .find_map(|c| c.split_whitespace().find_map(|p| p.strip_prefix("language-").map(|s| s.to_string())))
+                    })
                     .map(|l| normalize_lang(&l))
                     .unwrap_or_else(|| "Plain Text".into());
                 let text: String = el.text().collect();
@@ -1129,7 +1224,7 @@ impl<'a> HtmlWalker<'a> {
                 for tr in el.descendants().filter_map(scraper::ElementRef::wrap).filter(|e| e.value().name() == "tr") {
                     let mut row = Vec::new();
                     for cell in tr.children().filter_map(scraper::ElementRef::wrap).filter(|e| matches!(e.value().name(), "td" | "th")) {
-                        let mut sub = HtmlWalker { b: Builder::default(), lists: vec![], quote: 0, assets_dir: self.assets_dir };
+                        let mut sub = HtmlWalker { b: Builder::default(), lists: vec![], quote: 0, assets_dir: self.assets_dir, callout: false };
                         let mut cm = Marks::default();
                         if let Some(style) = cell.value().attr("style") {
                             apply_style(style, &mut cm);
@@ -1425,5 +1520,22 @@ mod tests {
         assert_eq!(ordered_numbers(&refs), vec![1, 1, 2]);
         assert_eq!(ordered_label(2, 1), "b.");
         assert_eq!(ordered_label(4, 2), "iv.");
+    }
+
+    #[test]
+    fn feishu_paste_todos_callouts_and_code() {
+        // 飞书网页复制出来的 HTML（结构取自 quiet.md 的粘贴测试）
+        let html = "<ul class=\"list-done1\"><li data-list=\"done\"><div>完成了</div></li><li data-list=\"undone\"><div>还没做</div></li></ul>\
+            <div class=\"zoneType-calloutBlock\"><div class=\"callout-container\" data-emoji-id=\"chestnut\">\
+            <div class=\"callout-block\" style=\"background-color:rgb(255,245,235);border-color:rgb(254,212,164);\"><div>第一行</div><div>第二行</div></div></div></div>\
+            <pre data-lark-language=\"Python\"><code>print(1)</code></pre>";
+        let bs = html_to_blocks(html, std::path::Path::new("/tmp"));
+        let kinds: Vec<_> = bs.iter().map(|b| (b.kind.clone(), b.text.text.clone())).collect();
+        assert_eq!(kinds[0], (BlockKind::Todo { checked: true }, "完成了".to_string()));
+        assert_eq!(kinds[1], (BlockKind::Todo { checked: false }, "还没做".to_string()));
+        assert_eq!(kinds[2], (BlockKind::Callout { emoji: "🌰".into(), color: 2 }, "第一行\n第二行".to_string()), "{kinds:#?}");
+        assert!(matches!(&kinds[3].0, BlockKind::Code { lang } if lang.eq_ignore_ascii_case("python")), "{kinds:#?}");
+        assert_eq!(bs.len(), 4, "{kinds:#?}");
+        assert!(bs[2].text.runs().all(|(_, m)| m.bg == 0), "高亮块底色不应变成文字底色");
     }
 }

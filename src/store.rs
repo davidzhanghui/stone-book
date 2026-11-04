@@ -295,6 +295,18 @@ impl Store {
 
     // ───────────── 文档 ─────────────
 
+    /// 正文里链接到 `id` 的文档（不含回收站和它自己）：(ID, 标题)，最近修改的在前。
+    /// 文档链接存为 `stonebrook://doc/<id>`，直接在正文 JSON 里查。
+    pub fn backlinks(&self, id: &str) -> Vec<(String, String)> {
+        if id.is_empty() || id.contains(['%', '_']) {
+            return vec![];
+        }
+        let pat = format!("%{}{id}%", crate::editor::DOC_LINK_PREFIX);
+        self.rows("SELECT id, title FROM docs WHERE deleted = 0 AND id != ?1 AND content LIKE ?2 ORDER BY updated DESC", params![id, pat], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+    }
+
     pub fn list(&self) -> Vec<DocMeta> {
         self.rows("SELECT id, parent, title, updated, deleted FROM docs ORDER BY sort, created", [], |r| {
             Ok(DocMeta { id: r.get(0)?, parent: r.get(1)?, title: r.get(2)?, updated: r.get(3)?, deleted: r.get::<_, i64>(4)? != 0 })
@@ -647,6 +659,31 @@ mod tests {
         let sn = snippet(&s, "关键字");
         assert!(sn.starts_with(&"前".repeat(20)));
         assert!(sn.contains("关键字"));
+    }
+
+    #[test]
+    fn backlinks_find_documents_that_link_here() {
+        use crate::model::{Block, BlockKind, RichText};
+        let _env = TEST_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = std::env::temp_dir().join(format!("stonebrook-backlinks-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::set_var(DATA_DIR_ENV, &dir);
+        let s = Store::open().unwrap();
+        let target = s.create(None, &DocContent::new_empty("被引用的文档"));
+        let link = |title: &str| {
+            let r = RichText::styled_link("被引用的文档", &format!("{}{target}", crate::editor::DOC_LINK_PREFIX));
+            DocContent::from_blocks(vec![Block::new(BlockKind::Title, RichText::plain(title)), Block::new(BlockKind::Text, r)])
+        };
+        let a = s.create(None, &link("引用者甲"));
+        let b = s.create(None, &link("引用者乙（在回收站）"));
+        let _c = s.create(None, &DocContent::new_empty("无关文档"));
+        s.set_deleted(&b, true);
+        s.flush();
+        assert_eq!(s.backlinks(&target), vec![(a.clone(), "引用者甲".to_string())]);
+        assert!(s.backlinks(&a).is_empty());
+        assert!(s.backlinks("%").is_empty(), "LIKE 通配符不能当成 ID");
+        std::env::remove_var(DATA_DIR_ENV);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

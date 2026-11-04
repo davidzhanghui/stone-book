@@ -22,7 +22,8 @@ use core_graphics::{
 use core_text::{
     font::CTFont,
     font_descriptor::{
-        kCTFontSlantTrait, kCTFontSymbolicTrait, kCTFontWeightTrait, kCTFontWidthTrait,
+        kCTFontDefaultOrientation, kCTFontSlantTrait, kCTFontSymbolicTrait, kCTFontWeightTrait,
+        kCTFontWidthTrait,
     },
     line::CTLine,
     string_attributes::kCTFontAttributeName,
@@ -30,7 +31,6 @@ use core_text::{
 use font_kit::{
     font::Font as FontKitFont,
     handle::Handle,
-    hinting::HintingOptions,
     metrics::Metrics,
     properties::{Style as FontkitStyle, Weight as FontkitWeight},
     source::SystemSource,
@@ -39,7 +39,6 @@ use font_kit::{
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use pathfinder_geometry::{
     rect::{RectF, RectI},
-    transform2d::Transform2F,
     vector::{Vector2F, Vector2I},
 };
 use smallvec::SmallVec;
@@ -64,7 +63,9 @@ struct MacTextSystemState {
     system_source: SystemSource,
     fonts: Vec<FontKitFont>,
     font_selections: HashMap<Font, FontId>,
-    font_ids_by_postscript_name: HashMap<String, FontId>,
+    /// [stonebrook patch] 同一个 PostScript 名可能对应字形表不同的多份字体
+    /// （CoreText 回退用的苹方 vs. PingFang.ttc 里的苹方），全部保留，按字形数区分。
+    font_ids_by_postscript_name: HashMap<String, SmallVec<[FontId; 2]>>,
     font_ids_by_font_key: HashMap<FontKey, SmallVec<[FontId; 4]>>,
     postscript_names_by_font_id: HashMap<FontId, String>,
     /// 合成斜体：字体没有斜体字形（如 PingFang SC）时，给它配一个倾斜绘制的孪生 FontId
@@ -299,7 +300,9 @@ impl MacTextSystemState {
             font_ids.push(font_id);
             let postscript_name = font.postscript_name().unwrap();
             self.font_ids_by_postscript_name
-                .insert(postscript_name.clone(), font_id);
+                .entry(postscript_name.clone())
+                .or_default()
+                .push(font_id);
             self.postscript_names_by_font_id
                 .insert(font_id, postscript_name);
             self.fonts.push(font);
@@ -333,12 +336,20 @@ impl MacTextSystemState {
 
     fn id_for_native_font(&mut self, requested_font: CTFont) -> FontId {
         let postscript_name = requested_font.postscript_name();
-        if let Some(font_id) = self.font_ids_by_postscript_name.get(&postscript_name) {
+        // [stonebrook patch] 同名字体按字形数挑出同一份，否则中文会画成另一份字体里的错字
+        let glyph_count = requested_font.glyph_count() as u32;
+        if let Some(font_id) = self
+            .font_ids_by_postscript_name
+            .get(&postscript_name)
+            .and_then(|ids| ids.iter().find(|id| self.fonts[id.0].glyph_count() == glyph_count))
+        {
             *font_id
         } else {
             let font_id = FontId(self.fonts.len());
             self.font_ids_by_postscript_name
-                .insert(postscript_name.clone(), font_id);
+                .entry(postscript_name.clone())
+                .or_default()
+                .push(font_id);
             self.postscript_names_by_font_id
                 .insert(font_id, postscript_name);
             self.fonts
@@ -358,17 +369,19 @@ impl MacTextSystemState {
     }
 
     fn raster_bounds(&self, params: &RenderGlyphParams) -> Result<Bounds<DevicePixels>> {
-        let font = &self.fonts[params.font_id.0];
-        let scale = Transform2F::from_scale(params.scale_factor);
-        let mut bounds: Bounds<DevicePixels> = font
-            .raster_bounds(
-                params.glyph_id.0,
-                params.font_size.into(),
-                scale,
-                HintingOptions::None,
-                font_kit::canvas::RasterizationOptions::GrayscaleAa,
-            )?
-            .into();
+        // [stonebrook patch] 用和 rasterize_glyph 相同字号的 CTFont 测量字形边界。
+        // font-kit 在基准字号量完再缩放，而系统字体会随字号切换光学尺寸
+        // （SF Text → SF Display），大标题字形会比位图宽，左侧被切掉一条。
+        let rect = self.fonts[params.font_id.0]
+            .native_font()
+            .clone_with_font_size(f32::from(params.font_size) as CGFloat)
+            .get_bounding_rects_for_glyphs(kCTFontDefaultOrientation, &[params.glyph_id.0 as CGGlyph]);
+        // 翻转为左上角原点，与 font-kit 一致
+        let rect = RectF::new(
+            Vector2F::new(rect.origin.x as f32, -(rect.origin.y + rect.size.height) as f32),
+            Vector2F::new(rect.size.width as f32, rect.size.height as f32),
+        );
+        let mut bounds: Bounds<DevicePixels> = (rect * params.scale_factor).round_out().to_i32().into();
         if self.oblique_ids.contains(&params.font_id) {
             // 倾斜后字形上半部右移、基线以下左移，左右各放宽
             let top = bounds.origin.y.0 as f32;
@@ -443,6 +456,9 @@ impl MacTextSystemState {
             cx.set_gray_fill_color(0.0, 1.0);
             cx.set_allows_antialiasing(true);
             cx.set_should_antialias(true);
+            // [stonebrook patch] 打开字体平滑，笔画粗细与原生 AppKit 文字一致
+            cx.set_allows_font_smoothing(true);
+            cx.set_should_smooth_fonts(true);
             cx.set_allows_font_subpixel_positioning(true);
             cx.set_should_subpixel_position_fonts(true);
             cx.set_allows_font_subpixel_quantization(false);

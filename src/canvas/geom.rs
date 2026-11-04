@@ -274,7 +274,7 @@ fn brace(x_arm: f32, x_tip: f32, y: f32, h: f32) -> Vec<PathCmd> {
 /// 横放圆柱：主体轮廓 + 右端内侧的半个椭圆。
 fn h_cylinder(r: Rect) -> (Vec<PathCmd>, Vec<PathCmd>) {
     let (x, y, w, h) = (r.x, r.y, r.w, r.h);
-    let rx = (w * 0.12).min(12.).max(1.);
+    let rx = (w * 0.12).clamp(1., 12.);
     let cy = y + h / 2.;
     let mut body = vec![PathCmd::Move(pt(x + rx, y)), PathCmd::Line(pt(x + w - rx, y))];
     arc_to(&mut body, pt(x + w - rx, cy), rx, h / 2., deg(-90.), deg(90.));

@@ -47,9 +47,9 @@ if [ "$FAST" = 0 ]; then
   step "检查代码格式（cargo fmt）"
   cargo fmt --check >/dev/null || fail "代码格式不一致，请先执行 cargo fmt"
 
-  step "静态检查（cargo clippy，只拦错误，警告不拦）"
+  step "静态检查（cargo clippy，零警告）"
   LOG=$(mktemp)
-  cargo clippy --all-targets --quiet >"$LOG" 2>&1 || { grep -E -A8 '^error' "$LOG" >&2; rm -f "$LOG"; fail "clippy 报错"; }
+  cargo clippy --all-targets --quiet -- -D warnings >"$LOG" 2>&1 || { grep -E -A8 '^error' "$LOG" >&2; rm -f "$LOG"; fail "clippy 有警告或错误"; }
   rm -f "$LOG"
 
   step "单元测试（cargo test）"

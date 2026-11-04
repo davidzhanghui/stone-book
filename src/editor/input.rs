@@ -61,6 +61,10 @@ impl Editor {
         };
         self.head = Pos { offset: caret, ..h };
         self.anchor = self.head;
+        // 中文输入法上屏的 @ 不经过 after_char_typed
+        if !mark && matches!(text.as_str(), "@" | "＠") {
+            self.open_mention();
+        }
         self.update_slash();
         self.changed(cx);
         self.reveal_head();
@@ -96,6 +100,10 @@ impl EntityInputHandler for Editor {
     }
 
     fn replace_text_in_range(&mut self, r: Option<Range<usize>>, text: &str, _: &mut Window, cx: &mut Context<Self>) {
+        if self.read_only {
+            cx.emit(EditorEvent::Toast(super::reading::READ_ONLY_HINT.into()));
+            return;
+        }
         let t = self.head_text();
         let range = r.map(|r| from_utf16(&t, r.start)..from_utf16(&t, r.end)).or(self.marked.clone());
         match range {
@@ -110,6 +118,9 @@ impl EntityInputHandler for Editor {
     }
 
     fn replace_and_mark_text_in_range(&mut self, r: Option<Range<usize>>, text: &str, sel: Option<Range<usize>>, _: &mut Window, cx: &mut Context<Self>) {
+        if self.read_only {
+            return;
+        }
         if self.has_selection() && self.anchor.slot() != self.head.slot() {
             self.checkpoint(EditKind::Typing);
             self.delete_selection_inner();

@@ -163,7 +163,7 @@ impl Editor {
                             .items_center()
                             .gap_2()
                             .child(icon("link", 15., t.accent))
-                            .child(div().flex_1().child("把当前块设为同步块"))
+                            .child(div().flex_1().child(crate::i18n::tr("把当前块设为同步块")))
                             .on_click(cx.listener(|this, _, _, cx| this.make_sync(cx))),
                     )
                     .child(div().px_3().pt_2().pb_1().text_size(px(11.5)).text_color(t.text_muted).child(if list.is_empty() {

@@ -50,6 +50,20 @@ regex = "1"
 core-foundation = "0.10"
 core-foundation-sys = "0.8"
 symphonia = { version = "0.5", features = ["mp3", "aac", "isomp4", "alac"] }
+roxmltree = "0.21.2"
+
+# 与 GPUI 代码形态冲突的风格类 lint（闭包里的长类型、按列下标的像素表、布局好的大枚举）。
+# 其余 clippy 警告一律清零：scripts/check.sh 与 CI 以 -D warnings 运行。
+[lints.clippy]
+type_complexity = "allow"
+too_many_arguments = "allow"
+needless_range_loop = "allow"
+large_enum_variant = "allow"
+wrong_self_convention = "allow"
+
+[dev-dependencies]
+# 无头 TestAppContext：编辑内核随机测试直接驱动真实的 Editor
+gpui = { version = "=0.2.2", default-features = false, features = ["font-kit", "runtime_shaders", "test-support"] }
 
 [profile.release]
 opt-level = 3

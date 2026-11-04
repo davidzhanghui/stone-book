@@ -809,11 +809,15 @@ pub struct Block {
     /// 所属同步块（跨文档共享内容）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sync: Option<String>,
+    /// 有序列表项的指定编号：从这一项起按此值继续计数（「开始新列表」为 1、「修改编号值」为输入值）。
+    /// 其他类型的块忽略；None 表示沿用自动编号。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub num: Option<u32>,
 }
 
 impl Block {
     pub fn new(kind: BlockKind, text: RichText) -> Self {
-        Block { id: next_id(), kind, indent: 0, align: 0, text, sync: None }
+        Block { id: next_id(), kind, indent: 0, align: 0, text, sync: None, num: None }
     }
 
     pub fn text(s: &str) -> Self {

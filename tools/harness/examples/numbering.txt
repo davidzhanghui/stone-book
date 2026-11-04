@@ -1,0 +1,36 @@
+# 有序列表编号菜单：两段有序列表被一段正文隔开，第二段默认从 1 开始；
+# 点它的编号 →「继续之前的编号」→ 变成 3；再点 →「修改编号值」输入 10。
+rmove 4 850
+key cmd-n
+wait 300
+type 编号菜单
+key enter
+type 1. 第一项
+key enter
+type 第二项
+key enter
+key enter
+type 中间插一段正文
+key enter
+type 1. 第二个列表
+key enter
+type 接着往下
+wait 1500
+shot n1-two-lists
+
+rclick 325 286
+wait 400
+shot n2-menu
+rclick 377 351
+wait 1500
+shot n3-continued
+rclick 325 286
+wait 400
+rclick 377 415
+wait 400
+shot n4-edit
+key cmd-a
+type 10
+key enter
+wait 1500
+shot n5-ten

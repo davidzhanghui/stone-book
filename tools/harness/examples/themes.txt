@@ -1,0 +1,28 @@
+# 配色方案：⌘, 打开设置
+rmove 4 850
+key cmd-,
+wait 500
+shot t1-settings
+# 北欧（浅色）
+rclick 551 335
+wait 400
+key escape
+wait 400
+shot t2-nord-light
+# 北欧（深色）
+key cmd-,
+wait 400
+rclick 805 220
+wait 400
+key escape
+wait 400
+shot t3-nord-dark
+# 暖纸（浅色）
+key cmd-,
+wait 400
+rclick 727 220
+rclick 494 335
+wait 400
+key escape
+wait 400
+shot t4-sepia

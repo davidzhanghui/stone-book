@@ -267,7 +267,7 @@ impl Editor {
                         .text_size(px(12.))
                         .text_color(col)
                         .child(icon("clock", 12., col))
-                        .child("倒计时已结束"),
+                        .child(crate::i18n::tr("倒计时已结束")),
                 )
             })
             .child(digits)
@@ -303,7 +303,7 @@ impl Editor {
                     .border_color(t.border)
                     .rounded(px(8.))
                     .shadow_lg()
-                    .child(div().text_size(px(12.)).text_color(t.text).child("颜色"))
+                    .child(div().text_size(px(12.)).text_color(t.text).child(crate::i18n::tr("颜色")))
                     .child(div().flex().flex_row().gap(px(4.)).children(COUNTDOWN_COLORS.iter().enumerate().map(|(i, &(name, c))| {
                         let on = cur as usize == i;
                         div()
@@ -376,7 +376,7 @@ impl Editor {
                         .justify_center()
                         .when(on, |d| d.border_color(t.accent).child(div().size(px(8.)).rounded_full().bg(t.accent))),
                 )
-                .child(label)
+                .child(crate::i18n::tr(label))
         };
         let section = |key: &'static str, on: bool| {
             div()
@@ -535,7 +535,7 @@ impl Editor {
                     .justify_center()
                     .when(ce.notify, |d| d.child(icon("check", 12., gpui::white()))),
             )
-            .child("倒计时结束时显示气泡提醒")
+            .child(crate::i18n::tr("倒计时结束时显示气泡提醒"))
             .on_mouse_down(MouseButton::Left, set(|ce| ce.notify = !ce.notify));
         let button = |key: &'static str, label: &'static str, primary: bool| {
             div()
@@ -550,7 +550,7 @@ impl Editor {
                 .cursor_pointer()
                 .when(primary, |d| d.bg(t.accent).text_color(gpui::white()).hover(|s| s.opacity(0.9)))
                 .when(!primary, |d| d.border_1().border_color(t.border).text_color(t.text).hover(|s| s.bg(t.hover)))
-                .child(label)
+                .child(crate::i18n::tr(label))
         };
 
         let dialog = div()
@@ -569,7 +569,7 @@ impl Editor {
                     .flex()
                     .items_center()
                     .justify_between()
-                    .child(div().text_size(px(16.)).font_weight(FontWeight::SEMIBOLD).text_color(t.text).child("倒计时设置"))
+                    .child(div().text_size(px(16.)).font_weight(FontWeight::SEMIBOLD).text_color(t.text).child(crate::i18n::tr("倒计时设置")))
                     .child(
                         div()
                             .id("cd-close")
@@ -744,7 +744,7 @@ impl Editor {
             .text_size(px(13.))
             .text_color(t.accent)
             .cursor_pointer()
-            .child("今天")
+            .child(crate::i18n::tr("今天"))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |this, _, _, cx| {

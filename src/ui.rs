@@ -47,6 +47,7 @@ fn icon_body(name: &str) -> Option<&'static str> {
             r##"<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>"##
         }
         "moon" => r##"<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>"##,
+        "book-open" => r##"<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>"##,
         "monitor" => r##"<rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/>"##,
         "activity" => r##"<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>"##,
         "outline" => r##"<path d="M3 6h18"/><path d="M8 12h13"/><path d="M13 18h8"/>"##,
@@ -423,7 +424,22 @@ impl Render for Tooltip {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = theme(cx);
         let (bg, fg) = if t.dark { (rgb(0xe3e4e6), rgb(0x1f2329)) } else { (rgb(0x1f2329), rgb(0xffffff)) };
-        div().mt_1().px_2().py(px(3.)).rounded(px(5.)).bg(bg).text_color(fg).text_size(px(12.)).font_family("PingFang SC").child(self.0.clone())
+        div().mt_1().px_2().py(px(3.)).rounded(px(5.)).bg(bg).text_color(fg).text_size(px(12.)).font_family("PingFang SC").child(translate_tip(&self.0))
+    }
+}
+
+/// 提示文字：整句在翻译表里就整句翻；否则把第一个空格前的部分当名称翻（「粗体 ⌘B」→「Bold ⌘B」）。
+fn translate_tip(s: &str) -> String {
+    if !crate::i18n::english() {
+        return s.to_string();
+    }
+    let whole = crate::i18n::tr_owned(s);
+    if whole != s {
+        return whole;
+    }
+    match s.split_once(' ') {
+        Some((head, rest)) => format!("{} {rest}", crate::i18n::tr_owned(head)),
+        None => whole,
     }
 }
 

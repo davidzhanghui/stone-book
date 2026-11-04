@@ -359,7 +359,7 @@ impl Editor {
         let frame = self.frame.clone();
         let has_sel = self.has_selection();
         let caret = is_head.then_some(m2d(self.head.offset.min(rt.len())));
-        let show_caret = focused && is_head && !has_sel && self.cursor_visible;
+        let show_caret = focused && is_head && !has_sel && self.cursor_visible && !self.read_only;
         let sel_start = has_sel && self.sel().0.slot() == slot;
         let sel_start_offset = m2d(self.sel().0.offset.min(rt.len()));
         let caret_color = t.cursor;
@@ -483,7 +483,30 @@ impl Editor {
                     BlockKind::Bullet => {
                         div().text_size(px(if blk.indent % 3 == 0 { 20. } else { 15. })).text_color(t.accent).child(bullet_glyph(blk.indent)).into_any_element()
                     }
-                    BlockKind::Ordered => div().text_size(px(body_size())).text_color(t.accent).child(ordered_label(number, blk.indent)).into_any_element(),
+                    BlockKind::Ordered => div()
+                        .relative()
+                        .child(
+                            div()
+                                .id(("ol-num", blk.id as usize))
+                                // 悬停底色往左右各扩 2px，负外边距抵消，编号位置与原来一致
+                                .px(px(2.))
+                                .ml(px(-2.))
+                                .rounded(px(3.))
+                                .cursor_pointer()
+                                .hover(|s| s.bg(t.hover))
+                                .text_size(px(body_size()))
+                                .text_color(t.accent)
+                                .child(ordered_label(number, blk.indent))
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(move |this, _, _, cx| {
+                                        cx.stop_propagation();
+                                        this.open_ordered_menu(ix, cx);
+                                    }),
+                                ),
+                        )
+                        .children(self.render_ordered_menu(ix, &t, cx))
+                        .into_any_element(),
                     _ => div()
                         .id(("todo", blk.id as usize))
                         .size(px(16.))
@@ -628,15 +651,18 @@ impl Editor {
                     .items_center()
                     .justify_center()
                     .cursor_grab()
-                    .when(!menu_open, |d| d.invisible().group_hover("blk", |s| s.visible()))
+                    .when(!menu_open, |d| d.invisible().when(!self.read_only, |d| d.group_hover("blk", |s| s.visible())))
                     .when(menu_open, |d| d.bg(t.hover))
                     .hover(|s| s.bg(t.hover))
                     .child(icon("grip", 14., t.text_muted))
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.pop.block_menu = if this.pop.block_menu == Some(ix) { None } else { Some(ix) };
-                        cx.notify();
-                    }))
-                    .on_drag(DragBlock { ix, label }, |d: &DragBlock, _, _, cx| cx.new(|_| DragPreview(d.label.clone()))),
+                    // 阅读模式：不能打开块菜单、不能拖动
+                    .when(!self.read_only, |d| {
+                        d.on_click(cx.listener(move |this, _, _, cx| {
+                            this.pop.block_menu = if this.pop.block_menu == Some(ix) { None } else { Some(ix) };
+                            cx.notify();
+                        }))
+                        .on_drag(DragBlock { ix, label }, |d: &DragBlock, _, _, cx| cx.new(|_| DragPreview(d.label.clone())))
+                    }),
             )
             .when(menu_open, |d| {
                 d.child(
@@ -765,7 +791,7 @@ impl Editor {
                                     .text_color(gpui::white())
                                     .text_size(px(10.5))
                                     .line_height(px(16.))
-                                    .child("同步块"),
+                                    .child(crate::i18n::tr("同步块")),
                             )
                         })
                     })
@@ -916,7 +942,7 @@ impl Editor {
                             .group_hover("code", |s| s.visible())
                             .hover(|s| s.bg(t.hover))
                             .child(icon("copy", 12., t.text_muted))
-                            .child("复制")
+                            .child(crate::i18n::tr("复制"))
                             .on_click(cx.listener(move |_, _, _, cx| {
                                 cx.write_to_clipboard(ClipboardItem::new_string(code.clone()));
                                 cx.emit(EditorEvent::Toast("代码已复制".into()));
@@ -1011,7 +1037,7 @@ impl Editor {
                     .text_color(t.text_muted)
                     .text_size(px(13.))
                     .child(icon("image", 16., t.text_muted))
-                    .child("图片加载中…")
+                    .child(crate::i18n::tr("图片加载中…"))
                     .into_any_element(),
             ),
         };
@@ -1243,7 +1269,7 @@ impl Editor {
                 .text_size(px(13.))
                 .when(primary, |d| d.bg(t.accent).text_color(gpui::white()).hover(|s| s.opacity(0.9)))
                 .when(!primary, |d| d.text_color(t.text).hover(|s| s.bg(t.hover)))
-                .child(label)
+                .child(crate::i18n::tr(label))
         };
         div()
             .flex()
@@ -1266,7 +1292,7 @@ impl Editor {
                     .text_size(px(12.))
                     .text_color(t.text_muted)
                     .child(icon("crop", 14., t.text_muted))
-                    .child("拖动边角调整 · ↵ 完成 · Esc 取消"),
+                    .child(crate::i18n::tr("拖动边角调整 · ↵ 完成 · Esc 取消")),
             )
             .child(tbtn("crop-full", "还原", false).on_click(cx.listener(|this, _, _, cx| this.crop_reset_full(cx))))
             .child(tbtn("crop-cancel", "取消", false).on_click(cx.listener(|this, _, _, cx| this.crop_cancel(cx))))
@@ -1412,7 +1438,7 @@ impl Editor {
                 .text_size(px(13.))
                 .child(icon("search", 14., t.text_muted))
                 .child(div().flex_1().line_height(px(22.)).child(f.input.clone()))
-                .child(div().text_size(px(12.)).text_color(t.text_muted).child(label))
+                .child(div().text_size(px(12.)).text_color(t.text_muted).child(crate::i18n::tr_owned(&label)))
                 .child(nav("find-prev", "chevron-up", -1, cx))
                 .child(nav("find-next", "chevron-down", 1, cx))
                 .child(
@@ -1490,7 +1516,7 @@ impl Editor {
                         .text_size(px(13.))
                         .child(icon("link", 14., t.text_muted))
                         .child(div().flex_1().line_height(px(22.)).child(le.input.clone()))
-                        .child(div().text_size(px(11.)).text_color(t.text_muted).child("↵ 确认 · 留空移除")),
+                        .child(div().text_size(px(11.)).text_color(t.text_muted).child(crate::i18n::tr("↵ 确认 · 留空移除"))),
                 ),
             )
             .with_priority(4),
@@ -1527,10 +1553,15 @@ impl Render for Editor {
             }
         }
         crate::math::pump(cx);
+        if self.read_only {
+            // 兜底：阅读模式下被回滚的操作可能把光标留在已撤回的位置
+            self.anchor = self.clamp(self.anchor);
+            self.head = self.clamp(self.head);
+        }
         let t = theme(cx).clone();
         let focused = self.is_focused(window);
-        // 光标只在聚焦且窗口在前台时闪烁（否则不再定时重绘）
-        self.blink_on = focused && window.is_window_active();
+        // 光标只在聚焦且窗口在前台时闪烁（否则不再定时重绘）；截图回归时用 STONEBROOK_NOBLINK 让光标常亮
+        self.blink_on = focused && window.is_window_active() && !no_blink();
         let cm_block = self.comment_open.or(self.comment_input.as_ref().map(|c| c.block));
         let (prev_cursor, prev_sel, cm_anchor) = {
             let mut f = self.frame.borrow_mut();
@@ -1552,11 +1583,13 @@ impl Render for Editor {
         let entity = cx.entity();
         let focus = self.focus.clone();
         let frame = self.frame.clone();
-        let overlay_follow = self.pop.slash.is_some() || (self.has_selection() && !self.selecting) || self.pop.link_edit.is_some();
+        let overlay_follow =
+            self.pop.slash.is_some() || self.pop.mention.is_some() || (self.has_selection() && !self.selecting) || self.pop.link_edit.is_some();
         // HTML 交互模式：本帧绘制后把原生 WebView 叠加到预览区域
         let menus_open = self.pop.slash.is_some()
             || self.pop.block_menu.is_some()
             || self.pop.lang_menu.is_some()
+            || self.pop.ordered_menu.is_some()
             || self.pop.prop_edit.is_some()
             || self.pop.button_edit.is_some()
             || self.pop.countdown_edit.is_some()
@@ -1620,46 +1653,49 @@ impl Render for Editor {
             .on_action(cx.listener(Self::doc_end))
             .on_action(cx.listener(Self::select_doc_start))
             .on_action(cx.listener(Self::select_doc_end))
-            .on_action(cx.listener(Self::backspace))
-            .on_action(cx.listener(Self::delete))
-            .on_action(cx.listener(Self::delete_word_back))
-            .on_action(cx.listener(Self::delete_line_back))
-            .on_action(cx.listener(Self::enter))
-            .on_action(cx.listener(Self::soft_enter))
-            .on_action(cx.listener(Self::tab))
-            .on_action(cx.listener(Self::shift_tab))
             .on_action(cx.listener(Self::select_all))
             .on_action(cx.listener(Self::copy))
-            .on_action(cx.listener(Self::cut))
-            .on_action(cx.listener(Self::paste))
-            .on_action(cx.listener(Self::paste_plain))
-            .on_action(cx.listener(Self::undo))
-            .on_action(cx.listener(Self::redo))
-            .on_action(cx.listener(Self::bold))
-            .on_action(cx.listener(Self::italic))
-            .on_action(cx.listener(Self::underline))
-            .on_action(cx.listener(Self::strike))
-            .on_action(cx.listener(Self::inline_code))
-            .on_action(cx.listener(Self::insert_link))
-            .on_action(cx.listener(Self::set_text_kind))
-            .on_action(cx.listener(Self::set_h1))
-            .on_action(cx.listener(Self::set_h2))
-            .on_action(cx.listener(Self::set_h3))
-            .on_action(cx.listener(Self::set_h4))
-            .on_action(cx.listener(Self::set_bullet))
-            .on_action(cx.listener(Self::set_ordered))
-            .on_action(cx.listener(Self::set_todo))
-            .on_action(cx.listener(Self::set_quote))
-            .on_action(cx.listener(Self::set_code))
-            .on_action(cx.listener(Self::toggle_todo))
-            .on_action(cx.listener(Self::duplicate_block))
-            .on_action(cx.listener(Self::move_block_up))
-            .on_action(cx.listener(Self::move_block_down))
             .on_action(cx.listener(Self::escape))
             .on_action(cx.listener(Self::open_find))
             .on_action(cx.listener(Self::find_next))
             .on_action(cx.listener(Self::find_prev))
-            .on_action(cx.listener(Self::insert_image))
+            // 阅读模式：只保留移动、选择、复制、查找；会改文档的动作不注册，按键直接落空
+            .when(!self.read_only, |d| {
+                d.on_action(cx.listener(Self::backspace))
+                    .on_action(cx.listener(Self::delete))
+                    .on_action(cx.listener(Self::delete_word_back))
+                    .on_action(cx.listener(Self::delete_line_back))
+                    .on_action(cx.listener(Self::enter))
+                    .on_action(cx.listener(Self::soft_enter))
+                    .on_action(cx.listener(Self::tab))
+                    .on_action(cx.listener(Self::shift_tab))
+                    .on_action(cx.listener(Self::cut))
+                    .on_action(cx.listener(Self::paste))
+                    .on_action(cx.listener(Self::paste_plain))
+                    .on_action(cx.listener(Self::undo))
+                    .on_action(cx.listener(Self::redo))
+                    .on_action(cx.listener(Self::bold))
+                    .on_action(cx.listener(Self::italic))
+                    .on_action(cx.listener(Self::underline))
+                    .on_action(cx.listener(Self::strike))
+                    .on_action(cx.listener(Self::inline_code))
+                    .on_action(cx.listener(Self::insert_link))
+                    .on_action(cx.listener(Self::set_text_kind))
+                    .on_action(cx.listener(Self::set_h1))
+                    .on_action(cx.listener(Self::set_h2))
+                    .on_action(cx.listener(Self::set_h3))
+                    .on_action(cx.listener(Self::set_h4))
+                    .on_action(cx.listener(Self::set_bullet))
+                    .on_action(cx.listener(Self::set_ordered))
+                    .on_action(cx.listener(Self::set_todo))
+                    .on_action(cx.listener(Self::set_quote))
+                    .on_action(cx.listener(Self::set_code))
+                    .on_action(cx.listener(Self::toggle_todo))
+                    .on_action(cx.listener(Self::duplicate_block))
+                    .on_action(cx.listener(Self::move_block_up))
+                    .on_action(cx.listener(Self::move_block_down))
+                    .on_action(cx.listener(Self::insert_image))
+            })
             .on_action(cx.listener(|_, _: &ShowCharacterPalette, window, _| window.show_character_palette()))
             .on_mouse_move(cx.listener(Self::root_mouse_move))
             .on_mouse_down(
@@ -1722,12 +1758,15 @@ impl Render for Editor {
                 .size_full(),
             );
 
+        if let Some(c) = prev_cursor.filter(|_| self.pop.mention.is_some()) {
+            root = root.child(self.render_mention(point(c.left() - px(4.), c.bottom() + px(6.)), &t, cx));
+        }
         if let Some(c) = prev_cursor.filter(|_| self.pop.slash.is_some()) {
             let at = point(c.left() - px(4.), c.bottom() + px(6.));
             self.slash_at = at;
             root = root.child(self.render_slash(at, c, &t, cx));
         }
-        if self.has_selection() && !self.selecting && focused && self.pop.link_edit.is_none() {
+        if self.has_selection() && !self.selecting && focused && self.pop.link_edit.is_none() && !self.read_only {
             if let Some(p) = prev_sel {
                 if !self.selected_slots().is_empty() {
                     root = root.child(self.render_toolbar(point(p.x - px(8.), p.y - px(46.)), &t, cx));
@@ -1782,4 +1821,10 @@ impl Render for Editor {
         }
         root
     }
+}
+
+/// 截图回归（tools/harness）时关闭光标闪烁，同一脚本两次截图逐像素一致。
+fn no_blink() -> bool {
+    static NO_BLINK: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *NO_BLINK.get_or_init(|| std::env::var_os("STONEBROOK_NOBLINK").is_some())
 }

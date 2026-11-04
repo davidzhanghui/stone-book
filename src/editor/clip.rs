@@ -356,11 +356,16 @@ impl Editor {
         }
     }
 
-    /// 拖入 / 粘贴本地文件：图片 → 图片块；Markdown / 文本 → 解析后插入；视频与其他文件 → 附件块。
+    /// 拖入 / 粘贴本地文件：图片 → 图片块；Markdown / 文本 / 飞书 DocxXML → 解析后插入；视频与其他文件 → 附件块。
     pub fn insert_files(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+        // 能解析成 DocxXML 的 .xml 才当文档内容，其余 .xml 仍是附件
+        let docxml = |p: &PathBuf| -> Option<Vec<Block>> {
+            let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+            (ext == "xml").then(|| std::fs::read_to_string(p).ok().and_then(|s| crate::docxml::import(&s).ok())).flatten()
+        };
         let (inline, rest): (Vec<PathBuf>, Vec<PathBuf>) = paths.into_iter().partition(|p| {
             let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
-            IMAGE_EXTS.contains(&ext.as_str()) || matches!(ext.as_str(), "md" | "markdown" | "txt")
+            IMAGE_EXTS.contains(&ext.as_str()) || matches!(ext.as_str(), "md" | "markdown" | "txt") || docxml(p).is_some()
         });
         if !rest.is_empty() {
             self.insert_attachments(rest, cx);
@@ -376,6 +381,13 @@ impl Editor {
                 if let Some(path) = std::fs::read(&p).ok().and_then(|b| convert::save_image_bytes(&b, &ext, &assets)) {
                     blocks.push(Block::new(BlockKind::image(path), RichText::default()));
                 }
+            } else if let Some(mut doc) = docxml(&p) {
+                // 文件的标题变成一级标题，正文接在后面
+                let title = doc.remove(0);
+                if !title.text.is_empty() {
+                    blocks.push(Block::new(BlockKind::Heading { level: 1 }, title.text));
+                }
+                blocks.extend(doc);
             } else if let Ok(s) = std::fs::read_to_string(&p) {
                 blocks.extend(if ext == "txt" { convert::plain_to_blocks(&s) } else { convert::md_to_blocks(&s) });
             }

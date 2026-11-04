@@ -1,0 +1,4 @@
+#!/bin/sh
+# 按需启用：git config core.hooksPath scripts/hooks
+# 每次提交前跑完整检查；临时跳过一次：git commit --no-verify
+exec "$(git rev-parse --show-toplevel)/scripts/check.sh"

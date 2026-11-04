@@ -1,0 +1,52 @@
+/* 暖纸：米黄纸面、墨褐色文字，长时间阅读更柔和。 */
+:root {
+  --theme-name: "暖纸";
+  --theme-author: "石渠";
+  --ink: #3b3024;
+  --rust: #b5651d;
+}
+
+.light {
+  --bg: #fbf6ec;
+  --sidebar-bg: #f3ecdd;
+  --panel-bg: #fffaf1;
+  --border: #e6dcc8;
+  --border-strong: #d6c8ae;
+  --text: var(--ink);
+  --text-secondary: #6b5d4b;
+  --text-muted: #978873;
+  --placeholder: #c2b49c;
+  --accent: var(--rust);
+  --accent-soft: #b5651d1f;
+  --selection: #b5651d33;
+  --cursor: var(--ink);
+  --code-bg: #f3ebdb;
+  --inline-code-bg: #3b302412;
+  --inline-code-fg: #a8431c;
+  --quote-bar: #d6c8ae;
+  --link: #9a4f12;
+  --table-header: #f3ebdb;
+  --drop-line: var(--rust);
+  --callout-bg-0: #f6eedd;
+  --callout-border-0: #e2d3b4;
+}
+
+.dark {
+  --bg: #22201c;
+  --sidebar-bg: #2a2722;
+  --panel-bg: #2f2b25;
+  --border: #3d3830;
+  --border-strong: #4d473d;
+  --text: #e8dfcf;
+  --text-secondary: #b8ad9a;
+  --text-muted: #8c8270;
+  --placeholder: #5f574a;
+  --accent: #e0954f;
+  --accent-soft: #e0954f26;
+  --selection: #e0954f4d;
+  --cursor: #e8dfcf;
+  --code-bg: #2a2722;
+  --link: #e8a866;
+  --table-header: #2a2722;
+  --drop-line: #e0954f;
+}

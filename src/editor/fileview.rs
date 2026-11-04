@@ -98,7 +98,12 @@ pub(crate) fn file_view_el<V: FileViewHost>(
                         .gap(px(12.))
                         .child(div().w(px(w)).h(px(h)).flex_none().bg(t.bg).rounded(px(4.)).shadow_sm().overflow_hidden().child(img(p).size_full()))
                         .when(h >= STATIC_MAX_H - 1., |d| {
-                            d.child(div().text_size(px(12.)).text_color(t.text_muted).child("内容较长，仅预览前面部分；完整内容请「用其他应用打开」"))
+                            d.child(
+                                div()
+                                    .text_size(px(12.))
+                                    .text_color(t.text_muted)
+                                    .child(crate::i18n::tr("内容较长，仅预览前面部分；完整内容请「用其他应用打开」")),
+                            )
                         }),
                 )
                 .into_any_element(),
@@ -146,7 +151,7 @@ pub(crate) fn file_view_el<V: FileViewHost>(
             .cursor_pointer()
             .hover(|s| s.bg(t.hover))
             .child(icon(ic, 14., t.text_secondary))
-            .child(label)
+            .child(crate::i18n::tr(label))
     };
     let path2 = path.to_string();
     let panel = div()

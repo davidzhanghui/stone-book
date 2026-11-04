@@ -23,7 +23,7 @@ impl BaseEditor {
             0.
         };
         if v.compact {
-            cover + 16. + 22. + 4. + 26. * n.min(3.).max(0.)
+            cover + 16. + 22. + 4. + 26. * n.clamp(0., 3.)
         } else {
             cover + 24. + 22. + 8. * (n + 1.) + 40. * n.max(0.)
         }

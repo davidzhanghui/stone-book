@@ -17,30 +17,61 @@ const COMMANDS: &[(&str, &str, &str, CmdFn)] = &[
     ("另存为模板", "", "save template moban lingcun", |ws, _, cx| ws.save_as_template(cx)),
     ("快速打开 / 全文搜索", "⌘P", "open search sousuo dakai", |_, w, cx| w.dispatch_action(Box::new(QuickOpen), cx)),
     ("演示模式", "F5", "present slides yanshi huandeng ppt", |ws, w, cx| ws.present(&Present, w, cx)),
+    ("切换阅读 / 编辑模式", "⌥⌘R", "read only reading yuedu bianji zhidu", |_, w, cx| w.dispatch_action(Box::new(ToggleReadMode), cx)),
     ("以思维导图查看", "", "mindmap siwei daotu", |ws, w, cx| ws.open_doc_mindmap(w, cx)),
     ("导出为 PDF", "", "pdf export daochu", |ws, w, cx| ws.export_pdf(&ExportPdf, w, cx)),
     ("导出为 Markdown", "⇧⌘E", "markdown md export daochu", |_, w, cx| w.dispatch_action(Box::new(ExportMarkdown), cx)),
     ("导出完整备份（文档 + 图片 + 附件）", "", "backup beifen export daochu quanbu", |_, w, cx| w.dispatch_action(Box::new(ExportBackup), cx)),
     ("从备份恢复…", "", "restore backup huifu beifen", |_, w, cx| w.dispatch_action(Box::new(RestoreBackup), cx)),
     ("导出为 HTML", "", "html export daochu", |_, w, cx| w.dispatch_action(Box::new(ExportHtml), cx)),
-    ("导入 Markdown…", "⌘O", "import daoru markdown", |_, w, cx| w.dispatch_action(Box::new(ImportMarkdown), cx)),
+    ("导出为飞书 DocxXML", "", "feishu lark docxml xml export daochu", |_, w, cx| w.dispatch_action(Box::new(ExportDocxXml), cx)),
+    ("导入 Markdown…", "⌘O", "import daoru markdown feishu docxml xml", |_, w, cx| w.dispatch_action(Box::new(ImportMarkdown), cx)),
     ("切换深色 / 浅色主题", "⇧⌘D", "theme dark light zhuti shense", |_, w, cx| w.dispatch_action(Box::new(CycleTheme), cx)),
     ("专注模式", "⇧⌘F", "focus zhuanzhu", |_, w, cx| w.dispatch_action(Box::new(FocusMode), cx)),
     ("显示 / 隐藏侧边栏", "⌘\\", "sidebar cebianlan", |_, w, cx| w.dispatch_action(Box::new(ToggleSidebar), cx)),
     ("显示 / 隐藏大纲", "⇧⌘O", "outline dagang", |_, w, cx| w.dispatch_action(Box::new(ToggleOutline), cx)),
     ("设置", "⌘,", "settings shezhi preferences", |ws, w, cx| ws.open_settings(&OpenSettings, w, cx)),
+    ("快捷键", "⌘/", "shortcuts keys keymap kuaijiejian anjian", |_, w, cx| w.dispatch_action(Box::new(ShowShortcuts), cx)),
     ("性能面板", "⌥⌘P", "perf xingneng", |_, w, cx| w.dispatch_action(Box::new(TogglePerf), cx)),
     ("打开欢迎文档", "", "welcome huanying", |_, w, cx| w.dispatch_action(Box::new(OpenWelcome), cx)),
     ("把当前文档移到回收站", "", "trash delete shanchu huishouzhan", |_, w, cx| w.dispatch_action(Box::new(TrashDoc), cx)),
     ("关于石渠", "", "about guanyu", |_, w, cx| w.dispatch_action(Box::new(About), cx)),
 ];
 
+/// 命令面板里显示的按键：命令对应的动作被用户改过键时显示新按键。
+fn command_hint(name: &str, default: &str, cx: &App) -> String {
+    let action = match name {
+        "新建文档" => "stonebrook::NewDoc",
+        "新建子文档" => "stonebrook::NewSubDoc",
+        "快速打开 / 全文搜索" => "stonebrook::QuickOpen",
+        "演示模式" => "stonebrook::Present",
+        "切换阅读 / 编辑模式" => "stonebrook::ToggleReadMode",
+        "导出为 Markdown" => "stonebrook::ExportMarkdown",
+        "导入 Markdown…" => "stonebrook::ImportMarkdown",
+        "切换深色 / 浅色主题" => "stonebrook::CycleTheme",
+        "专注模式" => "stonebrook::FocusMode",
+        "显示 / 隐藏侧边栏" => "stonebrook::ToggleSidebar",
+        "显示 / 隐藏大纲" => "stonebrook::ToggleOutline",
+        "设置" => "stonebrook::OpenSettings",
+        "快捷键" => "stonebrook::ShowShortcuts",
+        "性能面板" => "stonebrook::TogglePerf",
+        _ => return default.to_string(),
+    };
+    crate::shortcuts::hint(action, cx)
+}
+
 fn cmd_matches(q: &str) -> Vec<usize> {
     let q = q.trim().to_lowercase();
     COMMANDS
         .iter()
         .enumerate()
-        .filter(|(_, (name, _, kw, _))| q.is_empty() || name.to_lowercase().contains(&q) || kw.contains(&q) || kw.replace(' ', "").contains(&q))
+        .filter(|(_, (name, _, kw, _))| {
+            q.is_empty()
+                || name.to_lowercase().contains(&q)
+                || crate::i18n::tr(name).to_lowercase().contains(&q)
+                || kw.contains(&q)
+                || kw.replace(' ', "").contains(&q)
+        })
         .map(|(i, _)| i)
         .collect()
 }
@@ -171,6 +202,71 @@ impl Workspace {
         cx.notify();
     }
 
+    fn set_language(&mut self, english: bool, _: &mut Window, cx: &mut Context<Self>) {
+        crate::i18n::set_english(english);
+        self.store.set_kv("lang", if english { "en" } else { "zh" });
+        crate::refresh_menus(cx);
+        cx.refresh_windows();
+        cx.notify();
+    }
+
+    fn set_css_theme(&mut self, sel: String, window: &mut Window, cx: &mut Context<Self>) {
+        self.store.set_kv("css_theme", &sel);
+        self.css_theme = sel;
+        self.apply_theme(window, cx);
+        cx.notify();
+    }
+
+    /// 在默认文本编辑器里打开主题文件。
+    fn open_theme_file(&mut self, path: &std::path::Path, cx: &mut Context<Self>) {
+        if std::process::Command::new("open").arg("-t").arg(path).spawn().is_err() {
+            cx.reveal_path(path);
+        }
+    }
+
+    /// 写一份新主题（内容为 `src`，空时用写满全部变量的模板），选中并打开。
+    fn create_css_theme(&mut self, name: &str, src: Option<String>, window: &mut Window, cx: &mut Context<Self>) {
+        let dir = crate::theme_css::themes_dir();
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            self.show_toast(format!("无法创建主题文件夹：{e}"), cx);
+            return;
+        }
+        let file = (1..)
+            .map(|i| if i == 1 { format!("{name}.css") } else { format!("{name} {i}.css") })
+            .find(|f| !dir.join(f).exists())
+            .unwrap_or_else(|| format!("{name}.css"));
+        let shown = file.trim_end_matches(".css").to_string();
+        let src = match src {
+            // 复制内置主题：改个名字，免得两份同名
+            Some(s) => match crate::theme_css::theme_name(&s) {
+                Some(old) => s.replacen(&format!("\"{old}\""), &format!("\"{shown}\""), 1),
+                None => s,
+            },
+            None => crate::theme_css::template(&shown),
+        };
+        if let Err(e) = std::fs::write(dir.join(&file), src) {
+            self.show_toast(format!("无法写入主题文件：{e}"), cx);
+            return;
+        }
+        self.set_css_theme(format!("user:{file}"), window, cx);
+        self.open_theme_file(&dir.join(&file), cx);
+        self.show_toast(format!("已创建主题「{shown}」，保存文件后自动生效"), cx);
+    }
+
+    /// 编辑当前主题：用户主题直接打开；内置主题先复制一份再打开（内置的不能改）。
+    fn edit_css_theme(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(path) = crate::theme_css::user_path(&self.css_theme) {
+            self.open_theme_file(&path, cx);
+            return;
+        }
+        let builtin = crate::theme_css::source(&self.css_theme).filter(|s| !s.is_empty());
+        let name = crate::theme_css::list().into_iter().find(|(v, _)| *v == self.css_theme).map(|(_, n)| n).unwrap_or_default();
+        match builtin {
+            Some(src) => self.create_css_theme(&format!("{name} 副本"), Some(src), window, cx),
+            None => self.create_css_theme("我的主题", None, window, cx),
+        }
+    }
+
     fn set_theme_mode(&mut self, mode: ThemeMode, window: &mut Window, cx: &mut Context<Self>) {
         self.theme_mode = mode;
         self.store.set_kv(
@@ -195,17 +291,19 @@ impl Workspace {
                 .text_size(px(13.))
                 .when(on, |d| d.bg(t.panel_bg).shadow_sm().text_color(t.accent))
                 .when(!on, |d| d.text_color(t.text_secondary).hover(|s| s.text_color(t.text)))
-                .child(label)
+                .child(crate::i18n::tr(label))
         };
         let group = || div().flex().flex_row().p(px(3.)).gap(px(2.)).rounded(px(8.)).bg(t.hover);
         let row = |label: &'static str, desc: &'static str| {
-            div().flex().flex_row().items_center().justify_between().py_3().border_b_1().border_color(t.border).child(
+            div().flex().flex_row().items_center().justify_between().gap(px(16.)).py_3().border_b_1().border_color(t.border).child(
                 div()
                     .flex()
                     .flex_col()
+                    .flex_1()
+                    .min_w(px(0.))
                     .gap(px(2.))
-                    .child(div().text_size(px(14.)).text_color(t.text).child(label))
-                    .child(div().text_size(px(12.)).text_color(t.text_muted).child(desc)),
+                    .child(div().text_size(px(14.)).text_color(t.text).child(crate::i18n::tr(label)))
+                    .child(div().text_size(px(12.)).text_color(t.text_muted).child(crate::i18n::tr(desc))),
             )
         };
         let mode = self.theme_mode;
@@ -252,7 +350,7 @@ impl Workspace {
                             .flex_row()
                             .items_center()
                             .justify_between()
-                            .child(div().text_size(px(20.)).font_weight(FontWeight::BOLD).text_color(t.text).child("设置"))
+                            .child(div().text_size(px(20.)).font_weight(FontWeight::BOLD).text_color(t.text).child(crate::i18n::tr("设置")))
                             .child(
                                 div()
                                     .id("set-close")
@@ -270,7 +368,7 @@ impl Workspace {
                                     })),
                             ),
                     )
-                    .child(div().mt_4().text_size(px(12.)).text_color(t.text_muted).child("外观"))
+                    .child(div().mt_4().text_size(px(12.)).text_color(t.text_muted).child(crate::i18n::tr("外观")))
                     .child(
                         row("主题", "深色模式下所有图表、公式都会自动适配").child(
                             group()
@@ -285,6 +383,96 @@ impl Workspace {
                                 .child(
                                     seg("th-s", "跟随系统", mode == ThemeMode::System)
                                         .on_click(cx.listener(|this, _, w, cx| this.set_theme_mode(ThemeMode::System, w, cx))),
+                                ),
+                        ),
+                    )
+                    .child({
+                        // 配色方案：内置 + 用户主题（<数据目录>/themes/*.css）
+                        let themes = crate::theme_css::list();
+                        let current = self.css_theme.clone();
+                        let problems = self.theme_problems.clone();
+                        let btn = |id: &'static str, label: &'static str| {
+                            div()
+                                .id(id)
+                                .px_3()
+                                .py(px(4.))
+                                .rounded(px(6.))
+                                .border_1()
+                                .border_color(t.border)
+                                .cursor_pointer()
+                                .text_size(px(12.))
+                                .text_color(t.text_secondary)
+                                .hover(|s| s.bg(t.hover).text_color(t.text))
+                                .child(crate::i18n::tr(label))
+                        };
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(8.))
+                            .py_3()
+                            .border_b_1()
+                            .border_color(t.border)
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .gap(px(2.))
+                                    .child(div().text_size(px(14.)).text_color(t.text).child(crate::i18n::tr("配色方案")))
+                                    .child(
+                                        div()
+                                            .text_size(px(12.))
+                                            .text_color(t.text_muted)
+                                            .child(crate::i18n::tr("用 CSS 变量改界面与文档的颜色，保存文件后自动生效")),
+                                    ),
+                            )
+                            .child(div().flex().flex_row().flex_wrap().gap(px(6.)).children(themes.into_iter().enumerate().map(|(k, (sel, name))| {
+                                let on = sel == current;
+                                div()
+                                    .id(("css-theme", k))
+                                    .px_3()
+                                    .py(px(5.))
+                                    .rounded(px(6.))
+                                    .border_1()
+                                    .border_color(if on { t.accent } else { t.border })
+                                    .cursor_pointer()
+                                    .text_size(px(13.))
+                                    .text_color(if on { t.accent } else { t.text_secondary })
+                                    .hover(|s| s.text_color(t.text))
+                                    .child(crate::i18n::tr_owned(&name))
+                                    .on_click(cx.listener(move |this, _, w, cx| this.set_css_theme(sel.clone(), w, cx)))
+                            })))
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_row()
+                                    .gap(px(6.))
+                                    .child(btn("css-new", "新建主题").on_click(cx.listener(|this, _, w, cx| this.create_css_theme("我的主题", None, w, cx))))
+                                    .child(btn("css-edit", "编辑 CSS").on_click(cx.listener(|this, _, w, cx| this.edit_css_theme(w, cx))))
+                                    .child(btn("css-dir", "打开主题文件夹").on_click(cx.listener(|_, _, _, cx| {
+                                        let dir = crate::theme_css::themes_dir();
+                                        let _ = std::fs::create_dir_all(&dir);
+                                        cx.reveal_path(&dir);
+                                    }))),
+                            )
+                            .when(!problems.is_empty(), |d| {
+                                d.child(
+                                    div()
+                                        .p_2()
+                                        .rounded(px(6.))
+                                        .bg(t.hover)
+                                        .text_size(px(12.))
+                                        .text_color(t.text_secondary)
+                                        .child(div().text_color(t.text).child(format!("未生效（{}）", problems.len())))
+                                        .children(problems.into_iter().take(12).map(|p| div().child(p))),
+                                )
+                            })
+                    })
+                    .child(
+                        row("界面语言", "菜单、面板与提示的语言；文档内容不变").child(
+                            group()
+                                .child(seg("lang-zh", "中文", !crate::i18n::english()).on_click(cx.listener(|this, _, w, cx| this.set_language(false, w, cx))))
+                                .child(
+                                    seg("lang-en", "English", crate::i18n::english()).on_click(cx.listener(|this, _, w, cx| this.set_language(true, w, cx))),
                                 ),
                         ),
                     )
@@ -312,7 +500,7 @@ impl Workspace {
                                 }))),
                         ),
                     )
-                    .child(div().mt_5().text_size(px(12.)).text_color(t.text_muted).child("评论"))
+                    .child(div().mt_5().text_size(px(12.)).text_color(t.text_muted).child(crate::i18n::tr("评论")))
                     .child(
                         row("评论作者名", "添加评论时显示的名字").child(
                             div()
@@ -327,7 +515,7 @@ impl Workspace {
                                 .child(self.author_input.clone()),
                         ),
                     )
-                    .child(div().mt_5().text_size(px(12.)).text_color(t.text_muted).child("隐私"))
+                    .child(div().mt_5().text_size(px(12.)).text_color(t.text_muted).child(crate::i18n::tr("隐私")))
                     .child(
                         row("允许联网", "仅用于网页卡片抓取标题和封面；关闭后石渠完全离线").child(
                             group()
@@ -341,9 +529,9 @@ impl Workspace {
                                 }))),
                         ),
                     )
-                    .child(div().mt_5().text_size(px(12.)).text_color(t.text_muted).child("写作统计"))
+                    .child(div().mt_5().text_size(px(12.)).text_color(t.text_muted).child(crate::i18n::tr("写作统计")))
                     .child(div().pt_3().child(self.render_heatmap(t)))
-                    .child(div().mt_5().text_size(px(12.)).text_color(t.text_muted).child("数据"))
+                    .child(div().mt_5().text_size(px(12.)).text_color(t.text_muted).child(crate::i18n::tr("数据")))
                     .child(
                         row("本地数据", "文档、图片、嵌入对象全部保存在这台电脑上").child(
                             div()
@@ -380,7 +568,7 @@ impl Workspace {
                                     .cursor_pointer()
                                     .text_size(px(12.5))
                                     .hover(|s| s.bg(t.hover))
-                                    .child("在访达中显示")
+                                    .child(crate::i18n::tr("在访达中显示"))
                                     .on_click(cx.listener(move |_, _, _, cx| {
                                         cx.reveal_path(&data_dir.join(crate::store::DB_FILE));
                                     })),
@@ -498,7 +686,9 @@ impl Workspace {
                                 .max_h(px(400.))
                                 .overflow_y_scroll()
                                 .p(px(6.))
-                                .when(items.is_empty(), |d| d.child(div().p_4().text_size(px(13.)).text_color(t.text_muted).child("没有匹配的命令")))
+                                .when(items.is_empty(), |d| {
+                                    d.child(div().p_4().text_size(px(13.)).text_color(t.text_muted).child(crate::i18n::tr("没有匹配的命令")))
+                                })
                                 .children(items.iter().enumerate().map(|(k, &i)| {
                                     let (name, key, _, _) = COMMANDS[i];
                                     div()
@@ -513,8 +703,8 @@ impl Workspace {
                                         .text_size(px(14.))
                                         .when(k == sel, |d| d.bg(t.active))
                                         .hover(|s| s.bg(t.hover))
-                                        .child(div().flex_1().text_color(t.text).child(name))
-                                        .child(div().text_size(px(12.)).text_color(t.text_muted).child(key))
+                                        .child(div().flex_1().text_color(t.text).child(crate::i18n::tr(name)))
+                                        .child(div().text_size(px(12.)).text_color(t.text_muted).child(command_hint(name, key, cx)))
                                         .on_click(cx.listener(move |this, _, window, cx| this.run_command(i, window, cx)))
                                 })),
                         ),
@@ -740,7 +930,7 @@ impl Workspace {
                         .justify_between()
                         .text_size(px(13.))
                         .text_color(t.text_muted)
-                        .child("← → 翻页 · Esc 退出")
+                        .child(crate::i18n::tr("← → 翻页 · Esc 退出"))
                         .child(format!("{} / {}", i + 1, n)),
                 )
                 .child(div().h(px(3.)).w(relative((*i + 1) as f32 / n as f32)).bg(t.accent)),

@@ -486,9 +486,9 @@ impl Editor {
                         .gap(px(6.))
                         .text_size(px(12.))
                         .text_color(t.text_secondary)
-                        .child("字体颜色")
+                        .child(crate::i18n::tr("字体颜色"))
                         .child(fg_row)
-                        .child(div().mt_1().child("背景颜色"))
+                        .child(div().mt_1().child(crate::i18n::tr("背景颜色")))
                         .child(bg_row(ORDER))
                         .child(bg_row([8, 9, 10, 11, 12, 13, 14, 15]))
                         .child(
@@ -505,7 +505,7 @@ impl Editor {
                                 .cursor_pointer()
                                 .hover(|s| s.bg(t.hover))
                                 .text_color(t.text)
-                                .child("恢复默认")
+                                .child(crate::i18n::tr("恢复默认"))
                                 .on_mouse_down(
                                     MouseButton::Left,
                                     cx.listener(|this, _, _, cx| {

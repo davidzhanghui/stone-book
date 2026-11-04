@@ -18,10 +18,16 @@ mod countdown;
 mod fileview;
 mod imgview;
 mod input;
+mod links;
+pub use links::DOC_LINK_PREFIX;
+#[cfg(test)]
+mod fuzz_tests;
 mod media;
 mod menus_render;
 mod nav;
+mod numbering;
 mod ops;
+mod reading;
 mod render;
 mod sync;
 mod table_render;
@@ -319,6 +325,8 @@ pub struct TablePicker {
 pub enum EditorEvent {
     Changed,
     Toast(String),
+    /// ⌘ + 点击了指向某篇文档的链接
+    OpenDoc(String),
     /// 打开嵌入对象的全屏编辑器
     OpenEmbed {
         kind: String,
@@ -357,10 +365,16 @@ pub struct Popups {
     /// 打开了「配色」下拉菜单的绘图块
     pub diagram_theme_menu: Option<usize>,
     pub sync_menu: bool,
+    /// 有序列表编号菜单
+    pub ordered_menu: Option<numbering::OrderedMenu>,
+    /// `@` 文档选择菜单
+    pub mention: Option<links::MentionMenu>,
 }
 
 pub struct Editor {
     pub doc_id: String,
+    /// `@` 菜单可选的文档（工作区设置）
+    doc_list: links::DocList,
     pub content: DocContent,
     pub version: u64,
     /// 文档内的各种弹出菜单 / 浮层（可以同时存在，Esc 按优先级逐个收起）
@@ -468,6 +482,10 @@ pub struct Editor {
     nbsp_measured: bool,
     /// 是否需要闪烁光标（渲染时按焦点 / 窗口激活状态更新）
     blink_on: bool,
+    /// 阅读模式：不接受修改（见 reading.rs）
+    read_only: bool,
+    /// 进入阅读模式时的文档快照，漏进来的修改回滚到它
+    ro_doc: Option<Vec<Arc<Block>>>,
     /// 正在编辑的行内公式 (块, 槽, 偏移)
     pub inline_math_at: Option<(usize, usize, usize)>,
     reveal_pending: std::cell::Cell<u8>,
@@ -500,6 +518,7 @@ impl Editor {
         }
         Editor {
             doc_id,
+            doc_list: Default::default(),
             content,
             version: 1,
             pop: Popups::default(),
@@ -573,6 +592,8 @@ impl Editor {
             nbsp_w: std::cell::Cell::new(0.3),
             nbsp_measured: false,
             blink_on: false,
+            read_only: false,
+            ro_doc: None,
             inline_math_at: None,
             reveal_pending: std::cell::Cell::new(0),
         }
@@ -599,7 +620,11 @@ impl Editor {
         self.url_paste = None;
         self.pop.block_menu = None;
         self.pop.lang_menu = None;
+        self.pop.ordered_menu = None;
+        self.pop.mention = None;
         self.pop.link_edit = None;
+        self.read_only = false;
+        self.ro_doc = None;
         self.image_sel = None;
         self.image_drag = None;
         self.image_crop = None;
@@ -771,6 +796,10 @@ impl Editor {
 
     /// 记录撤销点。连续输入 / 连续删除合并为一步。
     pub fn checkpoint(&mut self, kind: EditKind) {
+        // 阅读模式：修改会在 changed() 里回滚，不记撤销点
+        if self.read_only {
+            return;
+        }
         let now = Instant::now();
         let coalesce = kind != EditKind::Other && self.last_edit.is_some_and(|(k, t)| k == kind && now.duration_since(t) < Duration::from_millis(1200));
         if !coalesce {
@@ -814,6 +843,11 @@ impl Editor {
 
     /// 内容发生变化：版本号 +1、安排自动保存、通知界面。
     pub fn changed(&mut self, cx: &mut Context<Self>) {
+        if self.reject_read_only_edit(cx) {
+            return;
+        }
+        // 块被移动 / 删除后 `@` 菜单记的位置可能失效
+        self.update_mention();
         // 回到正文编辑：收起评论卡片（正在写评论时除外）
         if self.comment_input.is_none() {
             self.comment_open = None;
@@ -886,6 +920,8 @@ impl Editor {
         }
         self.pop.block_menu = None;
         self.pop.lang_menu = None;
+        self.pop.ordered_menu = None;
+        self.pop.mention = None;
         self.reveal_head();
         cx.notify();
     }

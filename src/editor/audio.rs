@@ -103,11 +103,7 @@ fn analyze(path: &Path, wav_out: Option<&Path>) -> Option<(Vec<f32>, f64)> {
     let (mut fine, mut cur, mut n, mut frames) = (Vec::new(), 0f32, 0usize, 0u64);
     let mut sbuf: Option<SampleBuffer<f32>> = None;
     let mut wav: Option<(std::io::BufWriter<std::fs::File>, u16)> = None;
-    loop {
-        let packet = match format.next_packet() {
-            Ok(p) => p,
-            Err(_) => break,
-        };
+    while let Ok(packet) = format.next_packet() {
         if packet.track_id() != track_id {
             continue;
         }

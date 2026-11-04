@@ -287,7 +287,7 @@ impl Editor {
                     .group_hover("tl-dot", |s| s.visible())
                     .hover(|s| s.bg(t.hover))
                     .child(icon("trash", 12., t.text_secondary))
-                    .tooltip(|_, cx| cx.new(|_| Tooltip("删除节点".into())).into())
+                    .tooltip(|_, cx| cx.new(|_| Tooltip(crate::i18n::tr("删除节点").into())).into())
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |this, _, window, cx| {

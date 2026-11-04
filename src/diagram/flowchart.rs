@@ -658,8 +658,7 @@ pub fn parse(header: &str, body: &[(usize, String)]) -> DResult<Graph> {
             let mut pending: Option<EdgeTok> = None;
             loop {
                 let mut group = vec![];
-                loop {
-                    let Some(nr) = parse_node(&mut p, line)? else { break };
+                while let Some(nr) = parse_node(&mut p, line)? {
                     let cl = stack.last().copied();
                     let idx = g.node(&nr.id, cl);
                     if let Some((shape, text)) = nr.shape {

@@ -147,7 +147,7 @@ pub fn filter_slash(query: &str) -> Vec<SlashItem> {
         .filter_map(|it| {
             let score = if it.keys.split(' ').any(|k| k == q) {
                 0
-            } else if it.label.contains(&q) {
+            } else if it.label.contains(&q) || crate::i18n::tr(it.label).to_lowercase().contains(&q) {
                 1
             } else if it.keys.split(' ').any(|k| k.starts_with(&q)) {
                 2
@@ -236,6 +236,10 @@ impl Editor {
     fn after_char_typed(&mut self, ch: char) {
         let h = self.head;
         let kind = self.content.blocks[h.block].kind.clone();
+        if matches!(ch, '@' | '＠') {
+            self.open_mention();
+            return;
+        }
         if (ch == '/' || ch == '、') && h.block > 0 && kind.is_textual() && !matches!(kind, BlockKind::Code { .. }) {
             self.pop.slash = Some(SlashMenu { block: h.block, start: h.offset - ch.len_utf8(), selected: 0, scrolled: Default::default() });
             return;
@@ -369,6 +373,7 @@ impl Editor {
     }
 
     pub(super) fn update_slash(&mut self) {
+        self.update_mention();
         let Some(sm) = &self.pop.slash else { return };
         let h = self.head;
         let close = (|| -> Option<bool> {
@@ -682,6 +687,10 @@ impl Editor {
         let n = out.len();
         self.content.blocks.splice(sb..=eb, out.into_iter().map(Arc::new));
         self.list.splice(sb..eb + 1, n);
+        // 从标题选到最后一个块的末尾时只剩标题：和 remove_blocks 一样补一个空段落
+        if self.content.blocks.len() == 1 {
+            self.insert_blocks(1, vec![Block::text("")]);
+        }
         let cursor = if start_kept { s } else { Pos::new(sb, 0, 0) };
         self.head = self.clamp(cursor);
         self.anchor = self.head;
@@ -850,6 +859,11 @@ impl Editor {
             self.apply_slash(ix, window, cx);
             return;
         }
+        if let Some(m) = &self.pop.mention {
+            let ix = m.selected;
+            self.apply_mention(ix, cx);
+            return;
+        }
         self.checkpoint(EditKind::Other);
         if self.has_selection() {
             self.delete_selection_inner();
@@ -948,6 +962,11 @@ impl Editor {
                 };
                 let mut nb = Block::new(kind, RichText::default());
                 nb.indent = blk.indent;
+                // 指定编号属于「列表在这里的位置」：交给插在上方的新项，原项接着往下数
+                if blk.num.is_some() {
+                    nb.num = blk.num;
+                    self.block_mut(h.block).num = None;
+                }
                 self.insert_blocks(h.block, vec![nb]);
                 self.head = Pos::new(h.block + 1, 0, 0);
             }
@@ -1302,6 +1321,8 @@ impl Editor {
         let mut copy = (*self.content.blocks[b]).clone();
         copy.id = crate::model::next_id();
         copy.sync = None;
+        // 副本紧跟在原块后面：接着往下编号，而不是重复同一个指定编号
+        copy.num = None;
         if let BlockKind::Embed { id, .. } = &mut copy.kind {
             if let Some(n) = crate::objects::duplicate(id) {
                 *id = n;
@@ -1349,7 +1370,8 @@ impl Editor {
     pub(crate) fn move_block(&mut self, d: i32, cx: &mut Context<Self>) {
         let (s, e) = self.sel();
         let (s, e) = (s.block.max(1), e.block);
-        if (d < 0 && s <= 1) || (d > 0 && e + 1 >= self.content.blocks.len()) {
+        // 选区只在标题里（e == 0）时没有可移动的块；否则 e - s 会下溢
+        if e < s || (d < 0 && s <= 1) || (d > 0 && e + 1 >= self.content.blocks.len()) {
             return;
         }
         self.checkpoint(EditKind::Other);
@@ -1362,8 +1384,12 @@ impl Editor {
             self.content.blocks.insert(s, blk);
             self.list.splice(s..e + 2, e - s + 2);
         }
-        self.head.block = (self.head.block as i32 + d) as usize;
-        self.anchor.block = (self.anchor.block as i32 + d) as usize;
+        // 标题不随之移动：只平移落在被移动区间里的端点
+        for p in [&mut self.head, &mut self.anchor] {
+            if p.block >= s {
+                p.block = (p.block as i32 + d) as usize;
+            }
+        }
         self.changed(cx);
         self.reveal_head();
     }
@@ -1915,7 +1941,12 @@ impl Editor {
             cx.notify();
             return;
         }
-        if self.pop.slash.take().is_some() || self.pop.block_menu.take().is_some() || self.pop.lang_menu.take().is_some() {
+        if self.pop.slash.take().is_some()
+            || self.pop.block_menu.take().is_some()
+            || self.pop.lang_menu.take().is_some()
+            || self.pop.ordered_menu.take().is_some()
+            || self.pop.mention.take().is_some()
+        {
             cx.notify();
         } else if self.pop.link_edit.is_some() {
             self.pop.link_edit = None;

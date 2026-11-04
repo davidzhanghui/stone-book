@@ -36,7 +36,7 @@ impl Editor {
                 .hover(|s| s.bg(t.hover))
                 .text_color(if danger { t.fg_palette[1] } else { t.text })
                 .child(icon(ic, 14., if danger { t.fg_palette[1] } else { t.text_secondary }))
-                .child(div().flex_1().child(label))
+                .child(div().flex_1().child(crate::i18n::tr(label)))
                 .child(div().text_color(t.text_muted).text_size(px(11.)).child(hint))
         };
         div()
@@ -54,7 +54,7 @@ impl Editor {
             .flex_col()
             .gap(px(2.))
             .when(textual, |d| {
-                d.child(div().px_2().pt_1().pb(px(4.)).text_size(px(11.)).text_color(t.text_muted).child("转换为"))
+                d.child(div().px_2().pt_1().pb(px(4.)).text_size(px(11.)).text_color(t.text_muted).child(crate::i18n::tr("转换为")))
                     .child(div().flex().flex_row().flex_wrap().gap(px(4.)).px_1().pb_1().children(kinds.into_iter().enumerate().map(|(i, (lbl, k))| {
                         let is_cur = std::mem::discriminant(&k) == std::mem::discriminant(kind) && (!matches!(k, BlockKind::Heading { .. }) || k == *kind);
                         div()
@@ -77,7 +77,7 @@ impl Editor {
                     .child(div().h(px(1.)).mx_1().my_1().bg(t.border))
             })
             .when(matches!(kind, BlockKind::Callout { .. }), |d| {
-                d.child(div().px_2().pb(px(4.)).text_size(px(11.)).text_color(t.text_muted).child("背景颜色"))
+                d.child(div().px_2().pb(px(4.)).text_size(px(11.)).text_color(t.text_muted).child(crate::i18n::tr("背景颜色")))
                     .child(div().flex().flex_row().gap(px(6.)).px_2().pb_2().children((1..8u8).map(|c| {
                         div()
                             .id(("cc", c as usize))
@@ -126,7 +126,7 @@ impl Editor {
                 this.move_block(1, cx);
             })))
             .child(div().h(px(1.)).mx_1().my_1().bg(t.border))
-            .child(div().px_2().pb(px(4.)).text_size(px(11.)).text_color(t.text_muted).child("缩进和对齐"))
+            .child(div().px_2().pb(px(4.)).text_size(px(11.)).text_color(t.text_muted).child(crate::i18n::tr("缩进和对齐")))
             .child(
                 div()
                     .flex()
@@ -148,7 +148,7 @@ impl Editor {
                             .border_color(t.border)
                             .hover(|s| s.bg(t.hover))
                             .child(icon("chevron-right", 13., t.text_secondary))
-                            .child(div().text_size(px(12.)).child("缩进"))
+                            .child(div().text_size(px(12.)).child(crate::i18n::tr("缩进")))
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.head = Pos::new(ix, 0, 0);
                                 this.anchor = this.head;
@@ -168,7 +168,7 @@ impl Editor {
                             .border_1()
                             .border_color(t.border)
                             .hover(|s| s.bg(t.hover))
-                            .child(div().text_size(px(12.)).child("减少缩进"))
+                            .child(div().text_size(px(12.)).child(crate::i18n::tr("减少缩进")))
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.head = Pos::new(ix, 0, 0);
                                 this.anchor = this.head;
@@ -217,7 +217,7 @@ impl Editor {
                     .cursor_pointer()
                     .hover(|s| s.bg(t.hover))
                     .child(icon("comment", 14., t.text_secondary))
-                    .child(div().flex_1().child("评论"))
+                    .child(div().flex_1().child(crate::i18n::tr("评论")))
                     .when(self.comments_on(ix) > 0, |d| d.child(div().text_size(px(11.)).text_color(t.accent).child(format!("{} 条", self.comments_on(ix)))))
                     .on_mouse_down(
                         MouseButton::Left,
@@ -247,7 +247,7 @@ impl Editor {
                     }
                     _ => (false, false),
                 };
-                d.child(div().px_2().pb(px(4.)).text_size(px(11.)).text_color(t.text_muted).child("表格"))
+                d.child(div().px_2().pb(px(4.)).text_size(px(11.)).text_color(t.text_muted).child(crate::i18n::tr("表格")))
                     .when(can_merge, |d| {
                         d.child(item("bm-mg", "table", "合并单元格", "", false).on_click(cx.listener(move |this, _, _, cx| {
                             this.pop.block_menu = None;
@@ -303,7 +303,7 @@ impl Editor {
                         .pb(px(4.))
                         .text_size(px(12.))
                         .text_color(t.text_muted)
-                        .child(it.group)
+                        .child(crate::i18n::tr(it.group))
                         .into_any_element(),
                 );
             }
@@ -334,7 +334,7 @@ impl Editor {
                     .when(sel, |d| d.bg(t.hover))
                     .hover(|s| s.bg(t.hover))
                     .child(div().w(px(22.)).flex_none().flex().items_center().justify_center().child(icon_el))
-                    .child(div().flex_1().text_size(px(14.)).text_color(t.text).child(it.label))
+                    .child(div().flex_1().text_size(px(14.)).text_color(t.text).child(crate::i18n::tr(it.label)))
                     .child(div().text_size(px(11.)).text_color(t.text_muted).child(it.hint))
                     .on_mouse_move(cx.listener(move |this, _: &MouseMoveEvent, _, cx| {
                         if let Some(s) = &mut this.pop.slash {
@@ -377,7 +377,7 @@ impl Editor {
             deferred(
                 anchored()
                     .position(point(caret.right() + px(2.), caret.top()))
-                    .child(div().text_size(px(15.)).line_height(caret.size.height).text_color(t.placeholder).child("输入关键词")),
+                    .child(div().text_size(px(15.)).line_height(caret.size.height).text_color(t.placeholder).child(crate::i18n::tr("输入关键词"))),
             )
             .with_priority(2)
         });

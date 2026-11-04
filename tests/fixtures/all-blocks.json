@@ -1,0 +1,495 @@
+{
+  "version": 2,
+  "blocks": [
+    {
+      "type": "title",
+      "text": {
+        "text": "全部块样例",
+        "spans": [
+          {
+            "len": 15
+          }
+        ]
+      }
+    },
+    {
+      "type": "text",
+      "text": {
+        "text": "普通粗斜下划删除code红字黄底链接",
+        "spans": [
+          {
+            "len": 6
+          },
+          {
+            "len": 3,
+            "marks": {
+              "bold": true
+            }
+          },
+          {
+            "len": 3,
+            "marks": {
+              "italic": true
+            }
+          },
+          {
+            "len": 6,
+            "marks": {
+              "underline": true
+            }
+          },
+          {
+            "len": 6,
+            "marks": {
+              "strike": true
+            }
+          },
+          {
+            "len": 4,
+            "marks": {
+              "code": true
+            }
+          },
+          {
+            "len": 6,
+            "marks": {
+              "color": 3
+            }
+          },
+          {
+            "len": 6,
+            "marks": {
+              "bg": 5
+            }
+          },
+          {
+            "len": 6,
+            "marks": {
+              "link": "https://example.com"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "text",
+      "text": {
+        "text": "公式 ￼",
+        "spans": [
+          {
+            "len": 7
+          },
+          {
+            "len": 3,
+            "marks": {
+              "math": "a^2+b^2=c^2"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "text",
+      "indent": 2,
+      "align": 1,
+      "text": {
+        "text": "居中缩进",
+        "spans": [
+          {
+            "len": 12
+          }
+        ]
+      }
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "text": {
+        "text": "三级标题",
+        "spans": [
+          {
+            "len": 12
+          }
+        ]
+      }
+    },
+    {
+      "type": "bullet",
+      "indent": 1,
+      "text": {
+        "text": "无序",
+        "spans": [
+          {
+            "len": 6
+          }
+        ]
+      }
+    },
+    {
+      "type": "ordered",
+      "text": {
+        "text": "有序",
+        "spans": [
+          {
+            "len": 6
+          }
+        ]
+      }
+    },
+    {
+      "type": "ordered",
+      "text": {
+        "text": "指定编号",
+        "spans": [
+          {
+            "len": 12
+          }
+        ]
+      },
+      "num": 7
+    },
+    {
+      "type": "todo",
+      "checked": true,
+      "text": {
+        "text": "待办",
+        "spans": [
+          {
+            "len": 6
+          }
+        ]
+      }
+    },
+    {
+      "type": "quote",
+      "text": {
+        "text": "引用",
+        "spans": [
+          {
+            "len": 6
+          }
+        ]
+      }
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "text": {
+        "text": "fn main() {}\n",
+        "spans": [
+          {
+            "len": 13
+          }
+        ]
+      }
+    },
+    {
+      "type": "callout",
+      "emoji": "💡",
+      "color": 4,
+      "text": {
+        "text": "高亮块",
+        "spans": [
+          {
+            "len": 9
+          }
+        ]
+      }
+    },
+    {
+      "type": "divider",
+      "text": {
+        "text": ""
+      }
+    },
+    {
+      "type": "image",
+      "path": "assets/a.png",
+      "alt": "描述",
+      "width": 320.0,
+      "crop": [
+        0.10000000149011612,
+        0.20000000298023224,
+        0.5,
+        0.5
+      ],
+      "text": {
+        "text": ""
+      }
+    },
+    {
+      "type": "table",
+      "rows": 2,
+      "cols": 3,
+      "cells": [
+        {
+          "text": "a",
+          "spans": [
+            {
+              "len": 1
+            }
+          ]
+        },
+        {
+          "text": "b",
+          "spans": [
+            {
+              "len": 1
+            }
+          ]
+        },
+        {
+          "text": "c",
+          "spans": [
+            {
+              "len": 1
+            }
+          ]
+        },
+        {
+          "text": "居中",
+          "spans": [
+            {
+              "len": 6
+            }
+          ],
+          "align": 1,
+          "valign": 2
+        },
+        {
+          "text": ""
+        },
+        {
+          "text": ""
+        }
+      ],
+      "header_row": false,
+      "header_col": true,
+      "widths": [
+        1.0,
+        2.0,
+        1.0
+      ],
+      "merges": [
+        {
+          "row": 1,
+          "col": 1,
+          "row_span": 1,
+          "col_span": 2
+        }
+      ],
+      "text": {
+        "text": ""
+      }
+    },
+    {
+      "type": "columns",
+      "cols": [
+        {
+          "text": "左",
+          "spans": [
+            {
+              "len": 3
+            }
+          ]
+        },
+        {
+          "text": "右",
+          "spans": [
+            {
+              "len": 3,
+              "marks": {
+                "bold": true
+              }
+            }
+          ]
+        }
+      ],
+      "text": {
+        "text": ""
+      }
+    },
+    {
+      "type": "file",
+      "path": "assets/b.pdf",
+      "name": "b.pdf",
+      "size": 2048,
+      "view": 1,
+      "text": {
+        "text": ""
+      }
+    },
+    {
+      "type": "toc",
+      "text": {
+        "text": ""
+      }
+    },
+    {
+      "type": "countdown",
+      "target": 1800000000000,
+      "color": 4,
+      "notify": true,
+      "dur": 3600,
+      "text": {
+        "text": ""
+      }
+    },
+    {
+      "type": "button",
+      "action": "open_url",
+      "url": "https://example.com",
+      "style": 3,
+      "text": {
+        "text": "按钮",
+        "spans": [
+          {
+            "len": 6
+          }
+        ]
+      }
+    },
+    {
+      "type": "timeline",
+      "items": [
+        {
+          "title": {
+            "text": "立项",
+            "spans": [
+              {
+                "len": 6
+              }
+            ]
+          },
+          "detail": {
+            "text": "详情",
+            "spans": [
+              {
+                "len": 6
+              }
+            ]
+          },
+          "time": {
+            "text": "2026-01",
+            "spans": [
+              {
+                "len": 7
+              }
+            ]
+          }
+        },
+        {
+          "title": {
+            "text": "上线",
+            "spans": [
+              {
+                "len": 6
+              }
+            ]
+          },
+          "detail": {
+            "text": ""
+          },
+          "time": {
+            "text": ""
+          }
+        }
+      ],
+      "vertical": true,
+      "same_side": true,
+      "hide": 2,
+      "text": {
+        "text": ""
+      }
+    },
+    {
+      "type": "math",
+      "text": {
+        "text": "\\int_0^1 x\\,dx",
+        "spans": [
+          {
+            "len": 14
+          }
+        ]
+      }
+    },
+    {
+      "type": "diagram",
+      "view": 2,
+      "offsets": {
+        "A": [
+          10.0,
+          -5.0
+        ]
+      },
+      "text": {
+        "text": "flowchart LR\n  A --> B",
+        "spans": [
+          {
+            "len": 22
+          }
+        ]
+      }
+    },
+    {
+      "type": "html",
+      "scripts": true,
+      "file": "assets/page.html",
+      "network": false,
+      "text": {
+        "text": "<b>hi</b>",
+        "spans": [
+          {
+            "len": 9
+          }
+        ]
+      }
+    },
+    {
+      "type": "link_card",
+      "url": "https://example.com/post",
+      "text": {
+        "text": ""
+      }
+    },
+    {
+      "type": "video",
+      "path": "assets/v.mp4",
+      "name": "v.mp4",
+      "view": 2,
+      "width": 480.0,
+      "text": {
+        "text": ""
+      }
+    },
+    {
+      "type": "embed",
+      "kind": "sheet",
+      "id": "obj-1",
+      "text": {
+        "text": ""
+      }
+    },
+    {
+      "type": "text",
+      "text": {
+        "text": "同步块里的段落",
+        "spans": [
+          {
+            "len": 21
+          }
+        ]
+      },
+      "sync": "sync-1"
+    },
+    {
+      "type": "from_the_future",
+      "payload": {
+        "x": 1
+      },
+      "text": {
+        "text": "未来版本的块"
+      }
+    }
+  ]
+}
