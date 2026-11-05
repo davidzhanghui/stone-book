@@ -354,7 +354,6 @@ fn slide_block(b: &Block, t: &Theme, k: f32, window: &mut Window) -> Option<AnyE
                 rows.truncate(14);
                 grid(text_rows(rows), true, k, t)
             }
-            crate::objects::ObjData::Pdf(p) => card("file", p.name.clone(), k, t),
             crate::objects::ObjData::Sketch(_) => card("file", "草图".to_string(), k, t),
         },
         BlockKind::File { name, .. } => card(if crate::editor::is_image_name(name) { "image" } else { "paperclip" }, name.clone(), k, t),

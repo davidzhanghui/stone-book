@@ -432,11 +432,6 @@ impl Editor {
                 self.seek_to_stamp(secs, &name, cx);
                 return;
             }
-            // PDF 摘录的回跳链接：单击打开阅读器并定位
-            if let Some(u) = url.filter(|u| u.starts_with(crate::pdfdoc::PDF_LINK_PREFIX)) {
-                self.open_link(&u, cx);
-                return;
-            }
         }
         // ⌘ + 点击打开链接
         if ev.modifiers.platform {

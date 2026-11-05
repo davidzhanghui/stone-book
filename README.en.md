@@ -11,7 +11,7 @@ No account, no cloud. Everything lives in one SQLite file on your machine (only 
 
 ![logo](assets/logo-256.png)
 
-- Version **2.1.0**. macOS 12+ only (AppKit, WKWebView, AVFoundation).
+- Version **2.2.0**. macOS 12+ only (AppKit, WKWebView, AVFoundation).
 - Full feature list (Chinese): [docs/FEATURES.md](docs/FEATURES.md)
 
 ## What it does

@@ -156,10 +156,6 @@ impl Editor {
             self.seek_to_stamp(secs, &name, cx);
             return;
         }
-        if let Some(rest) = url.strip_prefix(crate::pdfdoc::PDF_LINK_PREFIX) {
-            cx.emit(EditorEvent::OpenEmbed { kind: "pdfdoc".into(), id: rest.to_string() });
-            return;
-        }
         match doc_link_target(url) {
             Some(id) => cx.emit(EditorEvent::OpenDoc(id.to_string())),
             None => cx.open_url(url),

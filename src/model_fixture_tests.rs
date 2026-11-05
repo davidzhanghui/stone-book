@@ -42,7 +42,6 @@ fn kind_name(k: &BlockKind) -> &'static str {
         BlockKind::Html { .. } => "html",
         BlockKind::LinkCard { .. } => "link_card",
         BlockKind::Video { .. } => "video",
-        BlockKind::Flashcard { .. } => "flashcard",
         BlockKind::Embed { .. } => "embed",
         BlockKind::Unknown { .. } => "unknown",
     }
@@ -73,7 +72,6 @@ const ALL_KINDS: &[&str] = &[
     "html",
     "link_card",
     "video",
-    "flashcard",
     "embed",
     "unknown",
 ];
@@ -173,16 +171,6 @@ fn all_blocks() -> Vec<Block> {
         Block::new(BlockKind::Html { scripts: true, file: "assets/page.html".into(), network: false }, p("<b>hi</b>")),
         Block::new(BlockKind::LinkCard { url: "https://example.com/post".into() }, RichText::default()),
         Block::new(BlockKind::Video { path: "assets/v.mp4".into(), name: "v.mp4".into(), view: FILE_VIEW_TEXT, width: Some(480.) }, RichText::default()),
-        Block::new(
-            BlockKind::Flashcard {
-                back: p("答案"),
-                card_id: "card-1".into(),
-                sched: [("1".to_string(), crate::flashcard::Sched { due: 1_800_000_000_000, stability: 2.5, reps: 1, state: 2, ..Default::default() })]
-                    .into_iter()
-                    .collect(),
-            },
-            p("首都是{{c1::北京}}"),
-        ),
         Block::new(BlockKind::Embed { kind: "sheet".into(), id: "obj-1".into() }, RichText::default()),
         with(Block::text("同步块里的段落"), |b| b.sync = Some("sync-1".into())),
         Block::from_value(serde_json::json!({ "type": "from_the_future", "payload": { "x": 1 }, "text": { "text": "未来版本的块" } })),

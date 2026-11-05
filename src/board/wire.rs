@@ -240,24 +240,6 @@ pub fn list_page(dark: bool) -> BoardDoc {
     d
 }
 
-/// 模板：详情页（网页）
-pub fn detail_page(dark: bool) -> BoardDoc {
-    let mut d = BoardDoc::new(false);
-    place(&mut d, 15, 0., 0., dark);
-    place(&mut d, 11, 40., 80., dark);
-    // 图片占位放大：占位框与居中的说明文字
-    for e in d.els.iter_mut().rev().take(2) {
-        e.w = 420.;
-        e.h = 300.;
-    }
-    place(&mut d, 13, 500., 90., dark);
-    place(&mut d, 2, 500., 240., dark);
-    place(&mut d, 0, 500., 300., dark);
-    place(&mut d, 10, 40., 410., dark);
-    place(&mut d, 10, 300., 410., dark);
-    d
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -276,7 +258,7 @@ mod tests {
             ids.dedup();
             assert_eq!(ids.len(), els.len());
         }
-        for t in [login_page, list_page, detail_page] {
+        for t in [login_page, list_page] {
             assert!(t(false).els.len() > 10);
         }
     }

@@ -16,7 +16,6 @@ use std::time::Duration;
 mod graph;
 mod panels;
 mod present;
-mod review;
 mod shortcuts_panel;
 
 actions!(
@@ -47,8 +46,7 @@ actions!(
         Present,
         ToggleReadMode,
         ShowShortcuts,
-        ExportDocxXml,
-        ReviewCards
+        ExportDocxXml
     ]
 );
 
@@ -110,7 +108,6 @@ pub struct Workspace {
     shortcuts_panel: Option<shortcuts_panel::ShortcutsPanel>,
     slides: Option<(Vec<present::Slide>, usize)>,
     present_ui: present::PresentUi,
-    review: Option<review::Review>,
     present_focus: FocusHandle,
     present_fullscreen: bool,
     /// 全屏打开的嵌入对象编辑器
@@ -163,33 +160,6 @@ impl Workspace {
             "sheet" => {
                 let v = cx.new(|cx| crate::sheet::SheetEditor::new(id.to_string(), window, cx));
                 let sub = cx.subscribe_in(&v, window, |this, _, _: &crate::sheet::SheetEvent, window, cx| this.close_embed(window, cx));
-                let fh = v.focus_handle(cx);
-                window.focus(&fh);
-                self.embed = Some((v.into(), fh, sub));
-            }
-            "pdfdoc" => {
-                // id 可以带上摘录链接的定位参数：`<对象>?page=..&annot=..`
-                let Some((obj, page, annot)) = crate::pdfdoc::pdf_link_target(&format!("{}{id}", crate::pdfdoc::PDF_LINK_PREFIX)) else { return };
-                if crate::objects::pdf(&obj).is_none() {
-                    self.show_toast("这份 PDF 已被删除".into(), cx);
-                    return;
-                }
-                let goto = id.contains('?').then_some((page, annot));
-                let v = cx.new(|cx| crate::pdfdoc::view::PdfReader::new(obj, goto, window, cx));
-                let sub = cx.subscribe_in(&v, window, |this, reader, ev: &crate::pdfdoc::view::PdfEvent, window, cx| match ev {
-                    crate::pdfdoc::view::PdfEvent::Close => this.close_embed(window, cx),
-                    crate::pdfdoc::view::PdfEvent::Excerpt { annot } => {
-                        let obj = reader.read(cx).obj.clone();
-                        let annot = annot.clone();
-                        this.editor.update(cx, |e, cx| e.insert_pdf_excerpt(&obj, &annot, cx));
-                        this.show_toast("已摘录到正文（PDF 块下方）".into(), cx);
-                    }
-                    crate::pdfdoc::view::PdfEvent::MakeCard { annot } => {
-                        let obj = reader.read(cx).obj.clone();
-                        let (front, back) = if annot.text.is_empty() { (annot.note.clone(), String::new()) } else { (annot.text.clone(), annot.note.clone()) };
-                        this.editor.update(cx, |e, cx| e.insert_card_after_embed(&obj, &front, &back, cx));
-                    }
-                });
                 let fh = v.focus_handle(cx);
                 window.focus(&fh);
                 self.embed = Some((v.into(), fh, sub));
@@ -650,7 +620,6 @@ impl Workspace {
             present_focus: cx.focus_handle(),
             present_fullscreen: false,
             present_ui: Default::default(),
-            review: None,
             embed: None,
             _subs: vec![sub, appearance, author_sub],
             _error_poll: Self::poll_store_errors(cx),
@@ -2385,7 +2354,6 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::export_backup))
             .on_action(cx.listener(Self::restore_backup))
             .on_action(cx.listener(Self::present))
-            .on_action(cx.listener(Self::review_cards))
             .on_action(cx.listener(Self::toggle_perf))
             .on_action(cx.listener(Self::toggle_read_mode))
             .on_action(cx.listener(Self::show_shortcuts))
@@ -2420,7 +2388,6 @@ impl Render for Workspace {
             .children(self.render_palette(&t, cx))
             .children(self.render_shortcuts_panel(&t, cx))
             .children(self.render_present(window, cx))
-            .children(self.render_review(cx))
             .children(self.render_graph(window, cx))
             .when_some(self.embed.as_ref().map(|e| e.0.clone()), |d, v| d.child(div().absolute().inset_0().occlude().child(v)))
             .children(self.render_toast(&t))

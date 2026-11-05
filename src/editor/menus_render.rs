@@ -113,12 +113,6 @@ impl Editor {
                         })),
                 )
             })
-            .when(textual && ix > 0, |d| {
-                d.child(item("bm-card", "book", "转为闪卡", "", false).on_click(cx.listener(move |this, _, _, cx| {
-                    this.pop.block_menu = None;
-                    this.convert_to_flashcard(ix, cx);
-                })))
-            })
             .child(item("bm-focus", "focus", if self.focus_ix() == Some(ix) { "退出聚焦" } else { "聚焦此项" }, "⌥⌘.", false).on_click(cx.listener(
                 move |this, _, _, cx| {
                     this.pop.block_menu = None;

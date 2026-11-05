@@ -17,8 +17,6 @@ pub enum SlashAction {
     Date,
     Link,
     File,
-    Pdf,
-    Flashcard,
     Drawio,
     Sync,
     Math,
@@ -89,7 +87,6 @@ pub fn slash_items() -> Vec<SlashItem> {
         ),
         it("常用", Svg("image"), 0xf5a339, "图片", "", "image img tp tupian picture", SlashAction::Image),
         it("常用", Svg("paperclip"), 0x0ea5e9, "视频或文件", "", "file video sp wj shipin wenjian fujian attachment shipinhuowenjian", SlashAction::File),
-        it("常用", Svg("book-open"), 0xf54a45, "PDF 阅读", "", "pdf yuedu pzyd pizhu biaozhu gaoliang annotate read", SlashAction::Pdf),
         it("常用", Svg("table"), 0x14b8a6, "表格", "", "table bg biaoge", SlashAction::Table),
         it("常用", Svg("columns"), 0x5b5bd6, "分栏", "", "columns fl fenlan grid", SlashAction::Columns),
         it(
@@ -101,7 +98,6 @@ pub fn slash_items() -> Vec<SlashItem> {
             "callout glk gaoliang highlight gaoliangkuai",
             SlashAction::Kind(Callout { emoji: "💡".into(), color: 5 }),
         ),
-        it("常用", Svg("book"), 0x7f3bf5, "闪卡", "", "flashcard card sk shanka fuxi anki cloze wakong", SlashAction::Flashcard),
         it("常用", Svg("presentation"), 0x8f959e, "演讲者备注", "", "notes speaker bz beizhu yanjiang yjzbz yanjiangzhebeizhu", SlashAction::Kind(Notes)),
         it("常用", Svg("sync"), 0x3b6cf6, "同步块", "", "sync tbk tongbu tongbukuai", SlashAction::Sync),
         it("常用", Svg("sigma"), 0x1f2329, "公式", "$$", "math formula gs gongshi latex tex shuxue", SlashAction::Math),
@@ -484,20 +480,10 @@ impl Editor {
                 self.pick_files(window, cx);
                 return;
             }
-            SlashAction::Flashcard => {
-                let at = insert_new(self, Editor::flashcard_block(RichText::default(), RichText::default()));
-                self.head = Pos::new(at, 0, 0);
-            }
             SlashAction::Drawio => {
                 self.anchor = self.head;
                 self.changed(cx);
                 self.pick_drawio(cx);
-                return;
-            }
-            SlashAction::Pdf => {
-                self.anchor = self.head;
-                self.changed(cx);
-                self.pick_pdf(cx);
                 return;
             }
             SlashAction::Link => {

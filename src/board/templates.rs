@@ -27,7 +27,6 @@ pub struct Template {
 pub const TEMPLATES: &[Template] = &[
     Template { name: "登录页线框", desc: "手机端登录页灰盒", cat: 12, build: super::wire::login_page },
     Template { name: "列表页线框", desc: "手机端搜索 + Tab + 列表", cat: 12, build: super::wire::list_page },
-    Template { name: "详情页线框", desc: "网页端商品 / 文章详情", cat: 12, build: super::wire::detail_page },
     Template { name: "时间线（新）", desc: "卡片交错排布的时间线", cat: 5, build: more::timeline_new },
     Template { name: "增长飞轮", desc: "环环相扣的增长循环", cat: 6, build: more::flywheel },
     Template { name: "雷达图", desc: "多维度能力对比", cat: 6, build: more::radar },

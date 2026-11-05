@@ -80,7 +80,6 @@ impl Editor {
             this.mouse_select(Pos::new(ix, 0, 0), 1, ev.modifiers.shift, cx);
         });
         match &blk.kind {
-            BlockKind::Flashcard { .. } => self.render_flashcard(ix, blk, focused, t, cx),
             BlockKind::File { .. } | BlockKind::Video { .. } => self.render_attachment(ix, blk, focused, t, window, cx),
             BlockKind::Toc => {
                 let heads: Vec<(usize, u8, String)> = self
@@ -1612,7 +1611,6 @@ impl Editor {
                 view.update(cx, |v, _| v.embed_max_w = maxw - 18.);
                 div().max_w(px(maxw - 18.)).overflow_hidden().child(view).into_any_element()
             }
-            Some(crate::objects::ObjData::Pdf(p)) => super::pdf::pdf_preview(&p, maxw - 16., t),
             Some(crate::objects::ObjData::Base(_)) => {
                 // 文档里的多维表格直接可交互（切换视图、编辑单元格、拖看板卡片），「全屏」进入完整编辑页
                 let view = self.live_base(oid, window, cx);
@@ -1677,7 +1675,6 @@ impl Editor {
             "base" => "⊞",
             "sheet" => "▦",
             "flow" => "⇢",
-            "pdfdoc" => "📄",
             "sketch" => "✐",
             _ => "✎",
         };
@@ -1710,7 +1707,6 @@ impl Editor {
                     .child(div().flex_1())
                     .child(div().text_color(t.text_muted).child(match kind {
                         "sheet" => "点击单元格直接编辑",
-                        "pdfdoc" => "双击阅读与批注",
                         _ => "双击编辑",
                     }))
                     .child(

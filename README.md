@@ -10,7 +10,7 @@
 
 ![logo](assets/logo-256.png)
 
-- 版本 **2.1.0**，仅支持 macOS 12+（依赖 AppKit、WKWebView、AVFoundation）
+- 版本 **2.2.0**，仅支持 macOS 12+（依赖 AppKit、WKWebView、AVFoundation）
 - 完整功能清单：[docs/FEATURES.md](docs/FEATURES.md)
 
 ## 能做什么

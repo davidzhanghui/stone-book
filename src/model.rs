@@ -664,16 +664,6 @@ pub enum BlockKind {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         width: Option<f32>,
     },
-    /// 闪卡：正面在 text 槽（槽 0），背面在 back（槽 1）；正面里的 `{{c1::答案}}` 是挖空。
-    /// sched：卡号（挖空序号，问答卡为 "0"）→ 复习状态。键用字符串：内部标签枚举里的 map 不支持整数键
-    Flashcard {
-        #[serde(default)]
-        back: RichText,
-        #[serde(default, skip_serializing_if = "String::is_empty")]
-        card_id: String,
-        #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
-        sched: std::collections::BTreeMap<String, crate::flashcard::Sched>,
-    },
     /// 嵌入对象：画板 / 电子表格 / 思维导图（数据在 objects 表）
     Embed {
         kind: String,
@@ -745,7 +735,7 @@ impl BlockKind {
 
     /// 有多个文本槽的块。
     pub fn is_multi(&self) -> bool {
-        matches!(self, BlockKind::Table { .. } | BlockKind::Columns { .. } | BlockKind::Timeline { .. } | BlockKind::Flashcard { .. })
+        matches!(self, BlockKind::Table { .. } | BlockKind::Columns { .. } | BlockKind::Timeline { .. })
     }
 
     /// 文本槽里放的是源码（公式 / 绘图 / HTML）。
@@ -755,8 +745,7 @@ impl BlockKind {
 
     /// 块内 Enter 插入换行而不是新建块。
     pub fn enter_is_newline(&self) -> bool {
-        matches!(self, BlockKind::Code { .. } | BlockKind::Table { .. } | BlockKind::Columns { .. } | BlockKind::Timeline { .. } | BlockKind::Flashcard { .. })
-            || self.is_source()
+        matches!(self, BlockKind::Code { .. } | BlockKind::Table { .. } | BlockKind::Columns { .. } | BlockKind::Timeline { .. }) || self.is_source()
     }
 
     pub fn is_list(&self) -> bool {
@@ -796,13 +785,11 @@ impl BlockKind {
             BlockKind::Html { .. } => "HTML",
             BlockKind::LinkCard { .. } => "网页卡片",
             BlockKind::Video { .. } => "视频",
-            BlockKind::Flashcard { .. } => "闪卡",
             BlockKind::Embed { kind, .. } => match kind.as_str() {
                 "board" => "画板",
                 "flow" => "流程图",
                 "sheet" => "电子表格",
                 "base" => "多维表格",
-                "pdfdoc" => "PDF 阅读",
                 "sketch" => "草图",
                 _ => "嵌入对象",
             },
@@ -872,7 +859,6 @@ impl Block {
             BlockKind::Table { cells, .. } => cells.len(),
             BlockKind::Columns { cols } => cols.len(),
             BlockKind::Timeline { items, .. } => items.len() * TL_SLOTS,
-            BlockKind::Flashcard { .. } => 2,
             k if k.is_void() => 0,
             _ => 1,
         }
@@ -883,11 +869,6 @@ impl Block {
             BlockKind::Table { cells, .. } => cells.get(cell),
             BlockKind::Columns { cols } => cols.get(cell),
             BlockKind::Timeline { items, .. } => items.get(cell / TL_SLOTS).map(|it| it.slot(cell % TL_SLOTS)),
-            BlockKind::Flashcard { back, .. } => match cell {
-                0 => Some(&self.text),
-                1 => Some(back),
-                _ => None,
-            },
             k if k.is_void() => None,
             _ => Some(&self.text),
         }
@@ -898,11 +879,6 @@ impl Block {
             BlockKind::Table { cells, .. } => cells.get_mut(cell),
             BlockKind::Columns { cols } => cols.get_mut(cell),
             BlockKind::Timeline { items, .. } => items.get_mut(cell / TL_SLOTS).map(|it| it.slot_mut(cell % TL_SLOTS)),
-            BlockKind::Flashcard { back, .. } => match cell {
-                0 => Some(&mut self.text),
-                1 => Some(back),
-                _ => None,
-            },
             k if k.is_void() => None,
             _ => Some(&mut self.text),
         }
@@ -927,7 +903,6 @@ impl Block {
                 .map(|it| [&it.time.text, &it.title.text, &it.detail.text].iter().filter(|s| !s.is_empty()).map(|s| s.as_str()).collect::<Vec<_>>().join(" "))
                 .collect::<Vec<_>>()
                 .join("\n"),
-            BlockKind::Flashcard { back, .. } => format!("{}\n{}", crate::flashcard::strip_clozes(&self.text.text), back.text),
             BlockKind::File { name, .. } => name.clone(),
             BlockKind::LinkCard { url } => url.clone(),
             BlockKind::Video { name, .. } => name.clone(),
@@ -940,7 +915,6 @@ impl Block {
             BlockKind::Table { cells, .. } => cells.iter().map(|c| c.char_count()).sum(),
             BlockKind::Columns { cols } => cols.iter().map(|c| c.char_count()).sum(),
             BlockKind::Timeline { items, .. } => items.iter().map(|i| i.title.char_count() + i.detail.char_count() + i.time.char_count()).sum(),
-            BlockKind::Flashcard { back, .. } => self.text.char_count() + back.char_count(),
             k if k.is_source() => 0,
             _ => self.text.char_count(),
         }
@@ -983,7 +957,6 @@ impl Block {
                 }
             }
             BlockKind::Heading { level } => *level = (*level).clamp(1, 6),
-            BlockKind::Flashcard { back, .. } => back.fixup(),
             _ => {}
         }
     }

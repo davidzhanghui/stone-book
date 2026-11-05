@@ -14,7 +14,7 @@
 //!   scroll DY            滚动
 //!   html 文件路径          把 HTML 文件放进剪贴板（模拟从网页复制）
 //!   htmlfile 文件路径      把 HTML 文件设为光标所在 HTML 块的内容（模拟上传）
-//!   attach 路径… / fileview 块 视图 / filefull 块 / pdfdoc 路径 / drawio 路径
+//!   attach 路径… / fileview 块 视图 / filefull 块 / drawio 路径
 //!   wait MS / shot NAME / dump / quit
 //!
 //! `shot`：设了 STONEBROOK_SHOT_DIR 时在进程内截取本窗口存为 <目录>/NAME.png（不需要屏幕录制权限）；
@@ -396,11 +396,6 @@ fn exec(cmd: &str, arg: &str, ws: &Entity<Workspace>, window: &mut Window, cx: &
         "drawio" => {
             let editor = ws.read(cx).editor().clone();
             editor.update(cx, |e, cx| e.import_drawio(vec![std::path::PathBuf::from(arg.trim())], cx));
-        }
-        // pdfdoc 路径：插入「PDF 阅读」块并打开阅读器
-        "pdfdoc" => {
-            let editor = ws.read(cx).editor().clone();
-            editor.update(cx, |e, cx| e.insert_pdf(std::path::Path::new(arg.trim()), None, cx));
         }
         "attach" => {
             let editor = ws.read(cx).editor().clone();

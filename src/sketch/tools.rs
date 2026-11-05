@@ -391,7 +391,14 @@ impl SketchEditor {
         self.hover_move = false;
         self.hover_handle = None;
         self.bind_hint = None;
-        self.show_toast(if self.view_mode { "已进入查看模式：拖动平移，点带链接的元素打开链接；⌥R 或 Esc 退出" } else { "已退出查看模式" }, cx);
+        self.show_toast(
+            if self.view_mode {
+                "已进入查看模式：拖动平移，点带链接的元素打开链接；⌥R 或 Esc 退出"
+            } else {
+                "已退出查看模式"
+            },
+            cx,
+        );
     }
 
     // ───────────── 浮动输入 ─────────────
@@ -585,6 +592,28 @@ fn recognize(pts: &[V], r: R, diag: f64, len: f64, a: V, b: V) -> Option<&'stati
     })
 }
 
+/// 元素链接：沿用官网格式 `?element=<id>`，在 excalidraw.com 打开同一文件也能跳转
+pub(super) fn element_link(id: &str) -> String {
+    format!("https://excalidraw.com/?element={id}")
+}
+
+/// 从链接里取出 `element=` 参数（不管域名，只要带这个参数就当元素链接）
+pub(super) fn element_link_id(link: &str) -> Option<&str> {
+    let query = link.split_once('?')?.1;
+    let query = query.split('#').next().unwrap_or(query);
+    query.split('&').find_map(|kv| kv.strip_prefix("element=")).filter(|id| !id.is_empty())
+}
+
+/// 没写协议的网址补成 https（「example.com」→「https://example.com」）
+pub(super) fn normalize_link(link: &str) -> String {
+    let l = link.trim();
+    if l.contains("://") || l.starts_with("mailto:") || l.starts_with("tel:") {
+        l.to_string()
+    } else {
+        format!("https://{l}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::recognize;
@@ -624,27 +653,5 @@ mod tests {
         assert_eq!(rec(&line), Some("line"));
         let squiggle: Vec<V> = (0..40).map(|i| v(i as f64 * 5., ((i as f64) * 0.8).sin() * 40.)).collect();
         assert_eq!(rec(&squiggle), None);
-    }
-}
-
-/// 元素链接：沿用官网格式 `?element=<id>`，在 excalidraw.com 打开同一文件也能跳转
-pub(super) fn element_link(id: &str) -> String {
-    format!("https://excalidraw.com/?element={id}")
-}
-
-/// 从链接里取出 `element=` 参数（不管域名，只要带这个参数就当元素链接）
-pub(super) fn element_link_id(link: &str) -> Option<&str> {
-    let query = link.split_once('?')?.1;
-    let query = query.split('#').next().unwrap_or(query);
-    query.split('&').find_map(|kv| kv.strip_prefix("element=")).filter(|id| !id.is_empty())
-}
-
-/// 没写协议的网址补成 https（「example.com」→「https://example.com」）
-pub(super) fn normalize_link(link: &str) -> String {
-    let l = link.trim();
-    if l.contains("://") || l.starts_with("mailto:") || l.starts_with("tel:") {
-        l.to_string()
-    } else {
-        format!("https://{l}")
     }
 }

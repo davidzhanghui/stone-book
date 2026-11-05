@@ -421,7 +421,8 @@ fn transparent_shape_drag_from_box_and_element_link(cx: &mut TestAppContext) {
         ed.follow_link(&link, cx);
         assert_eq!(ed.sel.iter().cloned().collect::<Vec<_>>(), vec![r2.clone()]);
         assert_eq!(super::tools::normalize_link("example.com"), "https://example.com");
-    });
+    })
+    .unwrap();
 }
 
 #[gpui::test]
@@ -448,5 +449,6 @@ fn view_mode_is_read_only(cx: &mut TestAppContext) {
         assert!(ed.sel.is_empty());
         ed.toggle_view_mode(cx);
         assert!(!ed.view_mode);
-    });
+    })
+    .unwrap();
 }

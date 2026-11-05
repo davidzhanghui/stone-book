@@ -366,14 +366,6 @@ impl Store {
         out
     }
 
-    /// 含闪卡的文档（不含回收站）：(ID, 标题, 正文 JSON)。先 flush，保证读到刚保存的内容。
-    pub fn flashcard_docs(&self) -> Vec<(String, String, String)> {
-        self.flush();
-        self.rows("SELECT id, title, content FROM docs WHERE deleted = 0 AND instr(content, '\"type\":\"flashcard\"') > 0", [], |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-        })
-    }
-
     pub fn list(&self) -> Vec<DocMeta> {
         self.rows("SELECT id, parent, title, updated, deleted FROM docs ORDER BY sort, created", [], |r| {
             Ok(DocMeta { id: r.get(0)?, parent: r.get(1)?, title: r.get(2)?, updated: r.get(3)?, deleted: r.get::<_, i64>(4)? != 0 })

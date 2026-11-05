@@ -21,7 +21,6 @@ pub const ITEMS: &[(&str, &str, &str)] = &[
     ("stonebrook::CycleTheme", "应用与窗口", "切换深浅色"),
     ("stonebrook::TogglePerf", "应用与窗口", "性能面板"),
     ("stonebrook::Present", "文档", "演示模式"),
-    ("stonebrook::ReviewCards", "文档", "复习闪卡"),
     ("stonebrook::ToggleReadMode", "文档", "阅读 / 编辑模式"),
     ("stonebrook::ImportMarkdown", "文档", "导入 Markdown"),
     ("stonebrook::ExportMarkdown", "文档", "导出 Markdown"),

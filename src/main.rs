@@ -11,7 +11,6 @@ mod convert;
 mod diagram;
 mod docxml;
 mod editor;
-mod flashcard;
 mod highlight;
 mod i18n;
 mod katex_assets;
@@ -23,7 +22,6 @@ mod model;
 #[cfg(test)]
 mod model_fixture_tests;
 mod objects;
-mod pdfdoc;
 mod seed;
 mod settings;
 mod sheet;
@@ -135,7 +133,6 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("cmd-,", OpenSettings, None),
         KeyBinding::new("cmd-shift-p", CommandPalette, None),
         KeyBinding::new("f5", Present, None),
-        KeyBinding::new("cmd-shift-r", ReviewCards, None),
         KeyBinding::new("cmd-\\", ToggleSidebar, None),
         KeyBinding::new("cmd-shift-o", ToggleOutline, None),
         KeyBinding::new("cmd-shift-f", FocusMode, None),
