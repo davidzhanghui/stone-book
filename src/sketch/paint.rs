@@ -8,7 +8,10 @@ use super::model::*;
 use super::render::{cached, color, font_family, Prim, Xf};
 use crate::canvas::paint::View;
 use crate::canvas::{pt, Col, PathCmd};
-use gpui::{fill, point, px, size, App, Bounds, ContentMask, Corners, Hsla, PathBuilder, PathStyle, Pixels, SharedString, StrokeOptions, TextRun, Window};
+use gpui::{
+    fill, point, px, size, App, Bounds, ContentMask, Corners, FillOptions, FillRule, Hsla, PathBuilder, PathStyle, Pixels, SharedString, StrokeOptions,
+    TextRun, Window,
+};
 use lyon_tessellation::{LineCap, LineJoin};
 
 fn build(cmds: &[PathCmd], view: &View, stroke: Option<(f32, bool)>, dash: Option<(f32, f32)>) -> Option<gpui::Path<Pixels>> {
@@ -26,7 +29,9 @@ fn build(cmds: &[PathCmd], view: &View, stroke: Option<(f32, bool)>, dash: Optio
                 PathBuilder::stroke(px(w)).with_style(PathStyle::Stroke(o))
             }
         }
-        None => PathBuilder::fill(),
+        // 非零环绕：手绘椭圆的实心填充是「两圈」轮廓（rough.js 多笔描边），lyon 默认的
+        // EvenOdd 会让两圈互相抵消、只剩边缘细缝（rough.js 画椭圆同样用 nonzero）
+        None => PathBuilder::fill().with_style(PathStyle::Fill(FillOptions::default().with_fill_rule(FillRule::NonZero))),
     };
     if let Some((on, off)) = dash {
         b = b.dash_array(&[px((on * view.scale).max(0.5)), px((off * view.scale).max(0.5))]);

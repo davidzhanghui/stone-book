@@ -1491,6 +1491,10 @@ pub enum CursorStyle {
     /// corresponds to the CSS cursor value `context-menu`
     ContextualMenu,
 
+    /// A four-way move cursor
+    /// corresponds to the CSS cursor value `move`
+    Move,
+
     /// Hide the cursor
     None,
 }

@@ -26,6 +26,28 @@ impl SketchEditor {
                 }
                 self.release(b, shift, window, cx);
             }
+            // 只按下并拖到 (x2, y2)，不松手（截拖动中的画面）
+            "hold" if n.len() >= 4 => {
+                let (a, b) = (v(n[0], n[1]), v(n[2], n[3]));
+                self.press(a, shift, false, 1, window, cx);
+                for i in 1..=8 {
+                    self.drag_to(a.add(b.sub(a).scale(i as f64 / 8.)), shift, false, cx);
+                }
+                self.mouse_world = b;
+            }
+            "up" if n.len() >= 2 => self.release(v(n[0], n[1]), shift, window, cx),
+            // 悬停（世界坐标）：箭头工具的绑定高亮、吸管预览
+            "hover" if n.len() >= 2 => {
+                self.mouse_world = v(n[0], n[1]);
+                if self.tool == Tool::Arrow && self.drag.is_none() {
+                    self.bind_hint = self.bind_target(self.mouse_world, "");
+                }
+            }
+            "eye" => {
+                let t = if parts.get(1) == Some(&"stroke") { PickTarget::Stroke } else { PickTarget::Bg };
+                self.popover = Some(Popover::Color(t));
+                self.eyedropper = Some(t);
+            }
             "click" if n.len() >= 2 => {
                 let p = v(n[0], n[1]);
                 let clicks = n.get(2).copied().unwrap_or(1.) as usize;
@@ -118,6 +140,28 @@ impl SketchEditor {
                 }
                 _ => {}
             },
+            // link URL：给选区设链接；link-to KIND N：设成指向第 N 个某种元素的对象链接；follow：点第一个带链接元素的图标
+            "link" => {
+                let ids = PromptKind::Link(self.sel.iter().cloned().collect());
+                self.apply_prompt(&ids, parts.get(1).copied().unwrap_or(""), cx)
+            }
+            "link-to" => {
+                let kind = parts.get(1).copied().unwrap_or("");
+                let n = parts.get(2).and_then(|s| s.parse::<usize>().ok()).unwrap_or(0);
+                let target = self.doc.live().filter(|e| e.kind == kind).nth(n).map(|e| e.id.clone());
+                if let Some(id) = target {
+                    let l = super::tools::element_link(&id);
+                    let ids = PromptKind::Link(self.sel.iter().cloned().collect());
+                    self.apply_prompt(&ids, &l, cx);
+                }
+            }
+            "follow" => {
+                let l = self.selected().first().and_then(|e| e.link().map(|s| s.to_string()));
+                if let Some(l) = l {
+                    self.follow_link(&l, cx);
+                }
+            }
+            "view" => self.toggle_view_mode(cx),
             "lineedit" => self.toggle_line_edit(cx),
             "crop" => self.toggle_crop(cx),
             "image" => {

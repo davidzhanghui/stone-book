@@ -75,8 +75,8 @@ actions!(
         SToolLaser,
         SToolBucket,
         SToolShapeDraw,
-        SToolEmbed,
-        SLineEdit
+        SLineEdit,
+        SToggleView
     ]
 );
 
@@ -157,6 +157,19 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("b", SToolBucket, c),
         KeyBinding::new("shift-x", SToolShapeDraw, c),
         KeyBinding::new("cmd-enter", SLineEdit, c),
+        KeyBinding::new("alt-r", SToggleView, c),
+    ]);
+    // 查看模式：只留缩放和退出，编辑类快捷键一律不响应
+    let vc = Some("SketchView");
+    cx.bind_keys([
+        KeyBinding::new("alt-r", SToggleView, vc),
+        KeyBinding::new("escape", SToggleView, vc),
+        KeyBinding::new("cmd-=", SZoomIn, vc),
+        KeyBinding::new("cmd-+", SZoomIn, vc),
+        KeyBinding::new("cmd--", SZoomOut, vc),
+        KeyBinding::new("cmd-0", SZoomReset, vc),
+        KeyBinding::new("shift-1", SZoomFit, vc),
+        KeyBinding::new("cmd-shift-c", SCopyPng, vc),
     ]);
 }
 
@@ -184,8 +197,6 @@ pub enum Tool {
     Bucket,
     /// 画完自动识别成形状（⇧X）
     ShapeDraw,
-    /// 嵌入网页
-    Embed,
 }
 
 impl Tool {
@@ -209,7 +220,6 @@ impl Tool {
             "laser" => Tool::Laser,
             "bucket" => Tool::Bucket,
             "shape" | "drawshape" => Tool::ShapeDraw,
-            "embed" | "embeddable" => Tool::Embed,
             _ => return None,
         })
     }
@@ -226,7 +236,6 @@ impl Tool {
             Tool::Frame => "frame",
             Tool::Sticky => "stickynote",
             Tool::ShapeDraw => "freedraw",
-            Tool::Embed => "embeddable",
             _ => return None,
         })
     }
@@ -283,6 +292,8 @@ pub(super) enum Drag {
         start: V,
         orig: Vec<(String, f64, f64)>,
         moved: bool,
+        /// 按在选区外框内的空白处（没点中元素本身）：没拖动就松开 = 取消选择（官网行为）
+        from_box: bool,
     },
     Resize {
         handle: usize,
@@ -363,7 +374,7 @@ pub enum PickTarget {
     Bg,
 }
 
-/// 浮动输入：链接 / 嵌入网页地址 / 十六进制颜色
+/// 浮动输入：链接 / 十六进制颜色
 pub(super) struct InputPrompt {
     pub kind: PromptKind,
     pub input: Entity<crate::line_input::LineInput>,
@@ -374,8 +385,6 @@ pub(super) struct InputPrompt {
 pub(super) enum PromptKind {
     /// 元素链接
     Link(Vec<String>),
-    /// 嵌入网页地址（新建的 embeddable）
-    Embed(String),
     /// 颜色选择器里的十六进制
     Hex(PickTarget),
 }
@@ -384,6 +393,18 @@ pub(super) enum PromptKind {
 pub(super) struct MermaidDlg {
     pub area: Entity<TextArea>,
     pub error: Option<String>,
+    /// 右侧预览（随输入防抖刷新）
+    pub preview: Option<MermaidPreview>,
+    /// 预览对应的源码：输入框光标闪烁也会通知，源码没变就不重算
+    pub preview_src: String,
+    pub preview_gen: u64,
+    pub _sub: Subscription,
+}
+
+pub(super) enum MermaidPreview {
+    Doc(Arc<SketchDoc>),
+    Image(std::path::PathBuf),
+    Error(String),
 }
 
 pub enum SketchEvent {
@@ -411,6 +432,8 @@ pub struct SketchEditor {
     pub(super) canvas_bounds: Bounds<Pixels>,
     /// 拖线时吸附的绑定目标
     pub(super) bind_hint: Option<String>,
+    /// 拖箭头时起点所在的形状与按下位置：起点实时吸到轮廓上（官网同款）
+    pub(super) link_start: Option<(String, V)>,
     /// 橡皮擦经过、松开后删除的元素
     pub(super) erase: Vec<String>,
     pub(super) mouse_world: V,
@@ -425,6 +448,12 @@ pub struct SketchEditor {
     pub(super) toast_gen: u64,
     /// 悬停的缩放 / 旋转手柄（光标形状用）
     pub(super) hover_handle: Option<usize>,
+    /// 选择工具悬停在可拖动的元素 / 选区外框上：光标显示四向箭头
+    pub(super) hover_move: bool,
+    /// 查看模式（官网 ⌥R）：只读，拖动平移，点带链接的元素打开链接
+    pub(super) view_mode: bool,
+    /// 查看模式下悬停在带链接的元素上（光标变手指）
+    pub(super) hover_link: bool,
     /// 线编辑模式：显示全部节点与中点，可增删节点
     pub(super) line_edit: Option<String>,
     /// 线编辑模式里选中的节点
@@ -470,6 +499,7 @@ impl SketchEditor {
             focus: cx.focus_handle(),
             canvas_bounds: Bounds::default(),
             bind_hint: None,
+            link_start: None,
             erase: vec![],
             mouse_world: V::default(),
             space_down: false,
@@ -481,6 +511,9 @@ impl SketchEditor {
             toast: None,
             toast_gen: 0,
             hover_handle: None,
+            hover_move: false,
+            view_mode: false,
+            hover_link: false,
             line_edit: None,
             line_pt: None,
             crop_edit: None,
@@ -555,6 +588,8 @@ impl SketchEditor {
             self.finish_linear(&id, cx);
         }
         self.tool = t;
+        self.bind_hint = None;
+        self.link_start = None;
         self.line_edit = None;
         self.line_pt = None;
         self.crop_edit = None;
@@ -587,6 +622,14 @@ impl SketchEditor {
 
     pub(super) fn selection_bounds(&self) -> Option<R> {
         geom::bounds_of(self.selected())
+    }
+
+    /// 点在选区（未锁定）的公共外框里：官网可从外框内任意处拖动已选元素
+    pub(super) fn in_sel_box(&self, p: V) -> bool {
+        if self.line_edit.is_some() || self.crop_edit.is_some() || self.selected().iter().all(|e| e.locked) {
+            return false;
+        }
+        self.selection_bounds().is_some_and(|r| r.inflate(4. / self.zoom as f64).contains(p))
     }
 
     /// 点中元素时实际选中的集合：最外层分组的全部成员；绑定文字换成它的容器。
@@ -704,9 +747,15 @@ pub(super) struct Overlay {
     pub rot_handle: Option<V>,
     pub points: Vec<V>,
     pub marquee: Option<R>,
-    pub bind: Option<[V; 4]>,
-    pub bind_round: bool,
+    /// 绑定目标的真实轮廓（闭合折线）
+    pub bind: Vec<V>,
+    /// 端点将吸附到的轮廓点（实心小圆点）
+    pub bind_dot: Option<V>,
+    /// 从形状内部起拖：按下处（空心圆）→ 轮廓上的起点（虚线）
+    pub bind_press: Option<(V, V)>,
     pub accent: Hsla,
+    /// 绑定高亮色（官网是浅蓝）
+    pub bind_color: Hsla,
     pub bg: Hsla,
     /// 线段中点（拖动可弯曲 / 加点）
     pub mids: Vec<V>,
@@ -748,9 +797,32 @@ impl Overlay {
                 window.paint_path(p, self.accent);
             }
         }
-        if let Some(q) = &self.bind {
-            outline(q, 3., self.accent.opacity(0.45), window);
-            let _ = self.bind_round;
+        if self.bind.len() >= 3 {
+            let mut b = PathBuilder::stroke(px(2.5));
+            b.move_to(sp(self.bind[0]));
+            for p in &self.bind[1..] {
+                b.line_to(sp(*p));
+            }
+            b.close();
+            if let Ok(p) = b.build() {
+                window.paint_path(p, self.bind_color);
+            }
+        }
+        if let Some((a, b)) = self.bind_press {
+            let mut pb = PathBuilder::stroke(px(1.)).dash_array(&[px(4.), px(3.)]);
+            pb.move_to(sp(a));
+            pb.line_to(sp(b));
+            if let Ok(p) = pb.build() {
+                window.paint_path(p, self.accent.opacity(0.7));
+            }
+            let c = sp(a);
+            let bb = Bounds::new(point(c.x - px(5.), c.y - px(5.)), size(px(10.), px(10.)));
+            window.paint_quad(fill(bb, self.bg).corner_radii(px(5.)).border_widths(px(1.5)).border_color(self.accent));
+        }
+        if let Some(d) = self.bind_dot {
+            let c = sp(d);
+            let bb = Bounds::new(point(c.x - px(4.5), c.y - px(4.5)), size(px(9.), px(9.)));
+            window.paint_quad(fill(bb, self.bind_color.opacity(1.)).corner_radii(px(4.5)));
         }
         for h in &self.handles {
             let c = sp(*h);
@@ -839,9 +911,13 @@ impl Render for SketchEditor {
         let grid_col = if dark { hsla(0., 0., 1., 0.07) } else { hsla(0., 0., 0., 0.07) };
         let cursor = match (&self.drag, self.tool) {
             (Some(Drag::Pan { .. }), _) => CursorStyle::ClosedHand,
+            _ if self.view_mode && self.hover_link => CursorStyle::PointingHand,
+            _ if self.view_mode => CursorStyle::OpenHand,
+            (Some(Drag::Move { .. }), _) => CursorStyle::Move,
             _ if self.space_down => CursorStyle::OpenHand,
             (_, Tool::Hand) => CursorStyle::OpenHand,
-            _ if self.eyedropper.is_some() => CursorStyle::Crosshair,
+            // 系统光标藏起来，画自己的吸管图标（render_eyedropper）
+            _ if self.eyedropper.is_some() => CursorStyle::None,
             (_, Tool::Text) => CursorStyle::IBeam,
             (_, Tool::Bucket) => CursorStyle::PointingHand,
             (_, Tool::Lasso) => CursorStyle::Arrow,
@@ -851,6 +927,7 @@ impl Render for SketchEditor {
                 Some(1) | Some(5) => CursorStyle::ResizeUpDown,
                 Some(3) | Some(7) => CursorStyle::ResizeLeftRight,
                 Some(_) => CursorStyle::PointingHand,
+                None if self.hover_move => CursorStyle::Move,
                 None => CursorStyle::Arrow,
             },
             _ => CursorStyle::Crosshair,
@@ -862,7 +939,9 @@ impl Render for SketchEditor {
         div()
             // 编辑文字 / 输入框时换按键上下文：单字母工具快捷键不抢输入法的按键；
             // 颜色选择器打开时字母键用来选色
-            .key_context(if typing {
+            .key_context(if self.view_mode {
+                "SketchView"
+            } else if typing {
                 "SketchText"
             } else if picking {
                 "SketchPicker"
@@ -937,8 +1016,8 @@ impl Render for SketchEditor {
             .on_action(cx.listener(|this, _: &SToolLaser, w, cx| this.set_tool(Tool::Laser, w, cx)))
             .on_action(cx.listener(|this, _: &SToolBucket, w, cx| this.set_tool(Tool::Bucket, w, cx)))
             .on_action(cx.listener(|this, _: &SToolShapeDraw, w, cx| this.set_tool(Tool::ShapeDraw, w, cx)))
-            .on_action(cx.listener(|this, _: &SToolEmbed, w, cx| this.set_tool(Tool::Embed, w, cx)))
             .on_action(cx.listener(|this, _: &SLineEdit, _, cx| this.toggle_line_edit(cx)))
+            .on_action(cx.listener(|this, _: &SToggleView, _, cx| this.toggle_view_mode(cx)))
             .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _, cx| {
                 if this.picker_key(ev, cx) {
                     cx.stop_propagation();
@@ -955,7 +1034,11 @@ impl Render for SketchEditor {
                     cx.notify();
                 }
             }))
-            .on_drop(cx.listener(|this, paths: &ExternalPaths, _, cx| this.drop_paths(paths.paths().to_vec(), cx)))
+            .on_drop(cx.listener(|this, paths: &ExternalPaths, _, cx| {
+                if !this.view_mode {
+                    this.drop_paths(paths.paths().to_vec(), cx)
+                }
+            }))
             .child(
                 div()
                     .size_full()
@@ -1013,7 +1096,7 @@ impl Render for SketchEditor {
                     .on_mouse_up_out(MouseButton::Left, cx.listener(Self::mouse_up))
                     .on_scroll_wheel(cx.listener(Self::scroll)),
             )
-            .when(empty && self.tool == Tool::Select && !editing, |d| {
+            .when(empty && self.tool == Tool::Select && !editing && !self.view_mode, |d| {
                 d.child(
                     div().absolute().inset_0().flex().items_center().justify_center().child(
                         div()
@@ -1034,15 +1117,18 @@ impl Render for SketchEditor {
                 )
             })
             .children(self.render_edit_overlay(&t, cx))
-            .child(self.render_toolbar(&t, cx))
+            .children(self.render_link_badges(&t, cx))
+            .when(!self.view_mode, |d| d.child(self.render_toolbar(&t, cx)))
+            .when(self.view_mode, |d| d.child(self.render_view_badge(&t, cx)))
             .child(self.render_topbar(&t, cx))
-            .children(self.render_props(&t, cx))
+            .when(!self.view_mode, |d| d.children(self.render_props(&t, cx)))
             .child(self.render_zoombar(&t, cx))
             .children(self.render_popover(&t, cx))
             .children(self.render_menu(&t, cx))
             .children(self.render_prompt(&t, cx))
             .children(self.render_mermaid(&t, cx))
             .children(self.render_toast(&t))
+            .children(self.render_eyedropper(&t))
     }
 }
 
@@ -1055,9 +1141,11 @@ impl SketchEditor {
             rot_handle: None,
             points: vec![],
             marquee: None,
-            bind: None,
-            bind_round: false,
+            bind: vec![],
+            bind_dot: None,
+            bind_press: None,
             accent: t.accent,
+            bind_color: hsla(207. / 360., 0.9, 0.62, 0.75),
             bg: t.bg,
             mids: vec![],
             sel_pt: None,
@@ -1073,22 +1161,25 @@ impl SketchEditor {
         }
         let now = std::time::Instant::now();
         o.laser = self.laser.iter().map(|(p, t0)| (*p, 1. - now.duration_since(*t0).as_millis() as f32 / super::tools::LASER_MS as f32)).collect();
-        if let Some(e) = self.bind_hint.as_ref().and_then(|id| self.doc.get(id)) {
-            let pad = 4.;
-            let mut e2 = e.clone();
-            e2.x -= pad;
-            e2.y -= pad;
-            e2.width += pad * 2.;
-            e2.height += pad * 2.;
-            o.bind = Some(geom::corners(&e2));
-            o.bind_round = e.kind == "ellipse";
+        if let Some(t) = self.bind_hint.as_ref().and_then(|id| self.doc.get(id)) {
+            o.bind = geom::outline_poly(t);
+            o.bind_dot = self.bind_dot(t);
+        }
+        // 从形状内部起拖的箭头：标出按下处，并用虚线连到轮廓上的起点
+        if let (Some(Drag::Linear { id, .. }), Some((sid, press))) = (&self.drag, &self.link_start) {
+            if let (Some(a), Some(st)) = (self.doc.get(id), self.doc.get(sid)) {
+                let p0 = geom::world_points(a)[0];
+                if geom::inside_shape(st, *press) && p0.dist(*press) > 1. {
+                    o.bind_press = Some((*press, p0));
+                }
+            }
         }
         if self.editing.is_some() || matches!(self.drag, Some(Drag::Create { .. }) | Some(Drag::Draw { .. }) | Some(Drag::Linear { .. })) {
             return o;
         }
         let pad = 4. / self.zoom as f64;
         let sel = self.selected();
-        if sel.is_empty() {
+        if sel.is_empty() || self.view_mode {
             return o;
         }
         if let Some(e) = self.single() {

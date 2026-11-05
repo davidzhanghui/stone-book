@@ -1,5 +1,5 @@
-//! 草图里「更多工具」的实现：便签、嵌入网页、油漆桶、套索、激光笔、画完识别形状、图片裁剪、
-//! 吸管、浮动输入（链接 / 网址 / 十六进制颜色）。
+//! 草图里「更多工具」的实现：便签、油漆桶、套索、激光笔、画完识别形状、图片裁剪、
+//! 吸管、浮动输入（链接 / 网址 / 十六进制颜色）、元素链接（跳到画布里的另一个元素）。
 
 use super::geom::{self, v, R, V};
 use super::model::Element;
@@ -10,23 +10,20 @@ use gpui::*;
 use serde_json::{json, Value};
 
 impl SketchEditor {
-    // ───────────── 便签 / 嵌入网页 ─────────────
+    // ───────────── 便签 ─────────────
 
-    /// 便签、嵌入网页拖完（或只点了一下）：定尺寸；便签马上进入写字，嵌入网页马上要地址。
+    /// 便签拖完（或只点了一下）：定尺寸，马上进入写字。
     pub(super) fn finish_special_create(&mut self, id: &str, start: V, window: &mut Window, cx: &mut Context<Self>) {
         let Some(e) = self.doc.get(id).cloned() else { return };
         let tiny = e.width < 4. && e.height < 4.;
-        let (dw, dh, min_w, min_h) = if e.is_sticky() { (STICKY_SIZE, STICKY_SIZE, STICKY_MIN, STICKY_MIN) } else { (460., 260., 120., 80.) };
-        let (w, h) = if tiny { (dw, dh) } else { (e.width.max(min_w), e.height.max(min_h)) };
+        let (w, h) = if tiny { (STICKY_SIZE, STICKY_SIZE) } else { (e.width.max(STICKY_MIN), e.height.max(STICKY_MIN)) };
         let (x, y) = if tiny { (start.x - w / 2., start.y - h / 2.) } else { (e.x, e.y) };
         if let Some(el) = self.doc.get_mut(id) {
             el.x = x;
             el.y = y;
             el.width = w;
             el.height = h;
-            if el.is_sticky() {
-                el.set("baseHeight", json!(h));
-            }
+            el.set("baseHeight", json!(h));
             el.bump();
         }
         self.update_frame_membership(&[id.to_string()]);
@@ -34,14 +31,9 @@ impl SketchEditor {
         if !self.tool_lock {
             self.tool = Tool::Select;
         }
-        if e.is_sticky() {
-            self.edit_bound_text(id, window, cx);
-            // 建便签和写第一行字算一步撤销
-            self.undo.pop_back();
-        } else {
-            self.commit(cx);
-            self.open_prompt(PromptKind::Embed(id.to_string()), "https://", window, cx);
-        }
+        self.edit_bound_text(id, window, cx);
+        // 建便签和写第一行字算一步撤销
+        self.undo.pop_back();
     }
 
     // ───────────── 颜色 ─────────────
@@ -89,17 +81,39 @@ impl SketchEditor {
         }
     }
 
-    /// 吸管：取点中元素的颜色
+    /// 吸管看到的颜色（对齐官网的「取像素」语义）：点到描边 / 文字取描边色，点到有填充的
+    /// 内部取背景色，空白处取画布底色。图片取不到像素，跳过。
+    pub(super) fn color_under(&self, w: V) -> String {
+        let tol = 3. / self.zoom as f64;
+        for e in self.doc.live().rev() {
+            if e.kind == "image" || !geom::hit(e, w, tol) {
+                continue;
+            }
+            if e.is_text() || e.is_linear() || e.kind == "freedraw" {
+                return e.stroke_color.clone();
+            }
+            // 去掉填充再测一次：仍命中说明点在描边上
+            let mut outline = e.clone();
+            outline.background_color = TRANSPARENT.into();
+            let on_stroke = geom::hit(&outline, w, tol);
+            if e.has_fill() && !on_stroke {
+                return e.background_color.clone();
+            }
+            if e.stroke_color != TRANSPARENT && !e.is_sticky() {
+                return e.stroke_color.clone();
+            }
+            if e.has_fill() {
+                return e.background_color.clone();
+            }
+        }
+        self.doc.bg_color()
+    }
+
+    /// 吸管：把点到的颜色设给目标（颜色选择器保持打开，和官网一致）
     pub(super) fn pick_color_at(&mut self, w: V, target: PickTarget, cx: &mut Context<Self>) {
-        let Some(e) = self.hit_at(w).and_then(|id| self.doc.get(&id).cloned()) else {
-            self.show_toast("没有点到元素", cx);
-            return;
-        };
-        let c = match target {
-            PickTarget::Bg if e.has_fill() => e.background_color.clone(),
-            _ => e.stroke_color.clone(),
-        };
+        let c = self.color_under(w);
         self.set_color(target, &c, cx);
+        self.shade = None;
         self.popover = Some(Popover::Color(target));
         cx.notify();
     }
@@ -301,12 +315,90 @@ impl SketchEditor {
         geom::update_bound_arrows(&mut self.doc, std::slice::from_ref(&orig.id));
     }
 
+    // ───────────── 链接 ─────────────
+
+    /// 「复制对象链接」的目标：单个元素用它自己的 id（绑定文字换成容器），
+    /// 多选且同属一个最外层分组时用分组 id（与官网 getLinkIdAndTypeFromSelection 一致）
+    pub(super) fn link_target_of_selection(&self) -> Option<String> {
+        let sel = self.selected();
+        match sel.as_slice() {
+            [] => None,
+            [e] => Some(self.doc.get(e.container_id().unwrap_or(&e.id)).map_or(e.id.clone(), |c| c.id.clone())),
+            [first, ..] => {
+                let g = first.group_ids.last()?;
+                sel.iter().all(|e| e.group_ids.last() == Some(g)).then(|| g.clone())
+            }
+        }
+    }
+
+    pub(super) fn copy_element_link(&mut self, cx: &mut Context<Self>) {
+        match self.link_target_of_selection() {
+            Some(id) => {
+                cx.write_to_clipboard(ClipboardItem::new_string(element_link(&id)));
+                self.show_toast("已复制对象链接：给另一个元素设「链接」时粘贴进去，点击即跳到这里", cx);
+            }
+            None => self.show_toast("先选中单个元素或一个分组", cx),
+        }
+    }
+
+    /// 点击链接图标：元素链接 → 画布定位并选中目标；其余当网址用浏览器打开
+    pub(super) fn follow_link(&mut self, link: &str, cx: &mut Context<Self>) {
+        if let Some(id) = element_link_id(link) {
+            let hits: Vec<String> = self.doc.live().filter(|e| e.id == id || e.group_ids.iter().any(|g| g == id)).map(|e| e.id.clone()).collect();
+            if hits.is_empty() {
+                self.show_toast("链接指向的元素已不存在", cx);
+                return;
+            }
+            let r = geom::bounds_of(self.doc.live().filter(|e| hits.contains(&e.id)));
+            // 查看模式只定位不选中（没有选区可言）
+            if !self.view_mode {
+                self.sel = hits.iter().flat_map(|h| self.select_target(h)).collect();
+                self.line_edit = None;
+                self.crop_edit = None;
+            }
+            self.zoom_to(r, self.zoom.max(1.));
+            cx.notify();
+            return;
+        }
+        cx.open_url(&normalize_link(link));
+    }
+
+    /// 某点上最上层元素的链接（查看模式点击用；锁定的也算，绑定文字算它的容器）
+    pub(super) fn link_at(&self, p: V) -> Option<String> {
+        let tol = 6. / self.zoom as f64;
+        let e = self.doc.live().rev().find(|e| geom::hit(e, p, tol))?;
+        let e = e.container_id().and_then(|c| self.doc.get(c)).unwrap_or(e);
+        e.link().filter(|l| !l.trim().is_empty()).map(|l| l.to_string())
+    }
+
+    /// 进出查看模式：进入时收起所有编辑状态
+    pub(super) fn toggle_view_mode(&mut self, cx: &mut Context<Self>) {
+        self.finish_edit(cx);
+        if let Some(id) = self.multi.clone() {
+            self.finish_linear(&id, cx);
+        }
+        self.view_mode = !self.view_mode;
+        self.sel.clear();
+        self.drag = None;
+        self.line_edit = None;
+        self.line_pt = None;
+        self.crop_edit = None;
+        self.popover = None;
+        self.menu = None;
+        self.prompt = None;
+        self.eyedropper = None;
+        self.hover_link = false;
+        self.hover_move = false;
+        self.hover_handle = None;
+        self.bind_hint = None;
+        self.show_toast(if self.view_mode { "已进入查看模式：拖动平移，点带链接的元素打开链接；⌥R 或 Esc 退出" } else { "已退出查看模式" }, cx);
+    }
+
     // ───────────── 浮动输入 ─────────────
 
     pub(super) fn open_prompt(&mut self, kind: PromptKind, init: &str, window: &mut Window, cx: &mut Context<Self>) {
         let ph = match &kind {
-            PromptKind::Link(_) => "粘贴或输入链接",
-            PromptKind::Embed(_) => "网页地址（YouTube、Figma、任意网址）",
+            PromptKind::Link(_) => "网址，或粘贴右键「复制对象链接」得到的链接",
             PromptKind::Hex(_) => "十六进制颜色",
         };
         let input = cx.new(|cx| {
@@ -347,19 +439,6 @@ impl SketchEditor {
                 }
                 self.commit(cx);
             }
-            PromptKind::Embed(id) => {
-                let url = text.trim();
-                if url.is_empty() || url == "https://" {
-                    return;
-                }
-                let url = if url.contains("://") { url.to_string() } else { format!("https://{url}") };
-                if let Some(e) = self.doc.get_mut(id) {
-                    e.set("link", json!(url));
-                    e.set("validated", json!(true));
-                    e.bump();
-                }
-                self.commit(cx);
-            }
             PromptKind::Hex(t) => {
                 let h = text.trim().trim_start_matches('#');
                 let valid = (h.len() == 3 || h.len() == 6 || h.len() == 8) && h.chars().all(|c| c.is_ascii_hexdigit());
@@ -378,13 +457,66 @@ impl SketchEditor {
 
     pub(super) fn open_mermaid(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.popover = None;
+        self.eyedropper = None;
         let sample = "flowchart LR\n  A[开始] --> B{是否通过?}\n  B -->|是| C[发布]\n  B -->|否| D[修改]\n  D --> A";
         let style =
             crate::text_area::TextStyle { font_size: 13., line_height: 19., color: crate::theme::theme(cx).text, bold: false, align: 0, v_align: 0, deco: 0 };
         let area = cx.new(|cx| crate::text_area::TextArea::new(sample, "粘贴 Mermaid 代码", style, cx));
         area.update(cx, |a, _| a.select_all_text());
         window.focus(&area.focus_handle(cx));
-        self.mermaid = Some(MermaidDlg { area, error: None });
+        let sub = cx.observe(&area, |this, _, cx| this.schedule_mermaid_preview(cx));
+        self.mermaid = Some(MermaidDlg { area, error: None, preview: None, preview_src: String::new(), preview_gen: 0, _sub: sub });
+        self.refresh_mermaid_preview(cx);
+        cx.notify();
+    }
+
+    /// 输入停顿 250ms 后再刷新预览（非流程图要渲染 PNG，逐键重算太浪费）
+    fn schedule_mermaid_preview(&mut self, cx: &mut Context<Self>) {
+        let Some(dlg) = self.mermaid.as_mut() else { return };
+        if dlg.area.read(cx).text() == dlg.preview_src {
+            return;
+        }
+        dlg.preview_gen += 1;
+        let g = dlg.preview_gen;
+        cx.spawn(async move |this: WeakEntity<SketchEditor>, cx: &mut AsyncApp| {
+            cx.background_executor().timer(std::time::Duration::from_millis(250)).await;
+            this.update(cx, |this, cx| {
+                if this.mermaid.as_ref().is_some_and(|d| d.preview_gen == g) {
+                    this.refresh_mermaid_preview(cx);
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    pub(super) fn refresh_mermaid_preview(&mut self, cx: &mut Context<Self>) {
+        let Some(dlg) = self.mermaid.as_mut() else { return };
+        let src = dlg.area.read(cx).text().to_string();
+        if src == dlg.preview_src && dlg.preview.is_some() {
+            return;
+        }
+        dlg.preview = Some(if src.trim().is_empty() {
+            MermaidPreview::Error(String::new())
+        } else {
+            match super::mermaid::convert(&src) {
+                Ok(super::mermaid::Converted::Doc(d)) => MermaidPreview::Doc(std::sync::Arc::new(d)),
+                Ok(super::mermaid::Converted::Png(png)) => {
+                    // GPUI 按路径缓存图片：文件名带内容哈希
+                    use std::hash::{Hash, Hasher};
+                    let mut h = std::collections::hash_map::DefaultHasher::new();
+                    png.hash(&mut h);
+                    let path = std::env::temp_dir().join(format!("stonebrook-mermaid-{:016x}.png", h.finish()));
+                    match std::fs::write(&path, &png) {
+                        Ok(()) => MermaidPreview::Image(path),
+                        Err(e) => MermaidPreview::Error(format!("预览失败：{e}")),
+                    }
+                }
+                Err(msg) => MermaidPreview::Error(msg),
+            }
+        });
+        dlg.preview_src = src;
+        dlg.error = None;
         cx.notify();
     }
 
@@ -492,5 +624,27 @@ mod tests {
         assert_eq!(rec(&line), Some("line"));
         let squiggle: Vec<V> = (0..40).map(|i| v(i as f64 * 5., ((i as f64) * 0.8).sin() * 40.)).collect();
         assert_eq!(rec(&squiggle), None);
+    }
+}
+
+/// 元素链接：沿用官网格式 `?element=<id>`，在 excalidraw.com 打开同一文件也能跳转
+pub(super) fn element_link(id: &str) -> String {
+    format!("https://excalidraw.com/?element={id}")
+}
+
+/// 从链接里取出 `element=` 参数（不管域名，只要带这个参数就当元素链接）
+pub(super) fn element_link_id(link: &str) -> Option<&str> {
+    let query = link.split_once('?')?.1;
+    let query = query.split('#').next().unwrap_or(query);
+    query.split('&').find_map(|kv| kv.strip_prefix("element=")).filter(|id| !id.is_empty())
+}
+
+/// 没写协议的网址补成 https（「example.com」→「https://example.com」）
+pub(super) fn normalize_link(link: &str) -> String {
+    let l = link.trim();
+    if l.contains("://") || l.starts_with("mailto:") || l.starts_with("tel:") {
+        l.to_string()
+    } else {
+        format!("https://{l}")
     }
 }

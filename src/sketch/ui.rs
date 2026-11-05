@@ -85,10 +85,9 @@ const MAIN_TOOLS: [(Tool, &str, &str, &str); 11] = [
 ];
 
 /// 「更多工具」菜单项
-const MORE_TOOLS: [(Tool, &str, &str, &str); 7] = [
+const MORE_TOOLS: [(Tool, &str, &str, &str); 6] = [
     (Tool::Image, "image", "插入图像", "9"),
     (Tool::Frame, "sk-hash", "画框工具", "F"),
-    (Tool::Embed, "sk-embed", "嵌入网页", ""),
     (Tool::ShapeDraw, "sk-draw-shape", "画完识别形状", "⇧X"),
     (Tool::Laser, "sk-laser", "激光笔", "K"),
     (Tool::Bucket, "sk-bucket", "油漆桶", "B"),
@@ -309,6 +308,9 @@ impl SketchEditor {
                 .flex_col()
                 .child(item("pm-open", "打开 .excalidraw…", "⌘O").on_click(cx.listener(|this, _, _, cx| this.open_file(cx))))
                 .child(item("pm-save", "另存为 .excalidraw…", "⌘S").on_click(cx.listener(|this, _, _, cx| this.save_as(cx))))
+                .child(item("pm-view", if self.view_mode { "退出查看模式" } else { "查看模式" }, "⌥R").on_click(cx.listener(|this, _, _, cx| {
+                    this.toggle_view_mode(cx);
+                })))
                 .child(item("pm-grid", if self.grid { "隐藏网格" } else { "显示网格" }, "⌘'").on_click(cx.listener(|this, _, _, cx| {
                     this.grid = !this.grid;
                     this.popover = None;
@@ -409,9 +411,110 @@ impl SketchEditor {
                     .px(px(3.))
                     .flex()
                     .items_center()
+                    .when(self.view_mode, |d| d.invisible())
                     .child(btn("sz-undo", "rotate-ccw", "撤销 ⌘Z", !self.undo.is_empty()).on_click(cx.listener(|this, _, _, cx| this.do_undo(cx))))
                     .child(btn("sz-redo", "redo", "重做 ⇧⌘Z", !self.redo.is_empty()).on_click(cx.listener(|this, _, _, cx| this.do_redo(cx)))),
             )
+    }
+
+    /// 带链接的元素右上角外侧的小链接图标（官网同款），单击打开链接 / 跳到目标元素
+    pub(super) fn render_link_badges(&self, t: &Theme, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        if matches!(self.drag, Some(Drag::Create { .. }) | Some(Drag::Draw { .. }) | Some(Drag::Linear { .. })) {
+            return vec![];
+        }
+        let size = self.canvas_bounds.size;
+        let editing = self.editing.as_ref().map(|e| e.id.clone());
+        let mut out = vec![];
+        for e in self.doc.live() {
+            let Some(link) = e.link().filter(|l| !l.trim().is_empty()) else { continue };
+            // 嵌入网页自己就显示网址；正在编辑文字的元素不挡输入框
+            if matches!(e.kind.as_str(), "embeddable" | "iframe") || editing.as_deref() == Some(e.id.as_str()) || e.container_id().is_some() {
+                continue;
+            }
+            let corner = if e.points.is_some() {
+                let r = super::geom::bounds(e);
+                super::geom::v(r.x1, r.y0)
+            } else {
+                super::geom::corners(e)[1]
+            };
+            let p = self.to_screen(corner) - self.canvas_bounds.origin;
+            let (x, y) = (p.x + px(4.), p.y - px(24.));
+            if x < px(-24.) || y < px(-24.) || x > size.width || y > size.height {
+                continue;
+            }
+            let link = link.to_string();
+            let internal = super::tools::element_link_id(&link).is_some();
+            let tip: SharedString = if internal { "跳到链接的元素".into() } else { link.clone().into() };
+            out.push(
+                div()
+                    .id(SharedString::from(format!("sk-link-{}", e.id)))
+                    .occlude()
+                    .absolute()
+                    .left(x)
+                    .top(y)
+                    .size(px(20.))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(px(5.))
+                    .bg(t.panel_bg)
+                    .border_1()
+                    .border_color(t.border)
+                    .cursor_pointer()
+                    .hover(|s| s.bg(t.hover))
+                    .child(icon("link", 12., t.accent))
+                    .tooltip(move |_, cx| cx.new(|_| Tooltip(tip.clone())).into())
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _, _, cx| {
+                            cx.stop_propagation();
+                            this.menu = None;
+                            this.follow_link(&link, cx);
+                        }),
+                    )
+                    .into_any_element(),
+            );
+        }
+        out
+    }
+
+    /// 查看模式时顶部中间的提示条（代替工具栏），带退出按钮
+    pub(super) fn render_view_badge(&self, t: &Theme, cx: &mut Context<Self>) -> AnyElement {
+        div()
+            .absolute()
+            .top(px(12.))
+            .left_0()
+            .right_0()
+            .flex()
+            .justify_center()
+            .child(
+                panel(t)
+                    .h(px(44.))
+                    .pl(px(14.))
+                    .pr(px(6.))
+                    .flex()
+                    .items_center()
+                    .gap(px(10.))
+                    .child(icon("eye", 15., t.accent))
+                    .child(div().text_size(px(13.)).child("查看模式"))
+                    .child(
+                        div()
+                            .id("sk-view-exit")
+                            .h(px(32.))
+                            .px(px(10.))
+                            .flex()
+                            .items_center()
+                            .rounded(px(7.))
+                            .cursor_pointer()
+                            .text_size(px(13.))
+                            .text_color(t.accent)
+                            .hover(|s| s.bg(t.hover))
+                            .tooltip(|_, cx| cx.new(|_| Tooltip("退出查看模式 ⌥R".into())).into())
+                            .child("退出")
+                            .on_click(cx.listener(|this, _, _, cx| this.toggle_view_mode(cx))),
+                    ),
+            )
+            .into_any_element()
     }
 
     pub(super) fn render_toast(&self, t: &Theme) -> Option<AnyElement> {
@@ -465,7 +568,7 @@ impl SketchEditor {
                     close(this);
                     this.cut(cx);
                 })))
-                .child(item("cm-dup", "再制", "⌘D").on_click(cx.listener(move |this, _, _, cx| {
+                .child(item("cm-dup", "创建副本", "⌘D").on_click(cx.listener(move |this, _, _, cx| {
                     close(this);
                     this.duplicate(cx);
                 })))
@@ -473,6 +576,12 @@ impl SketchEditor {
                     close(this);
                     this.copy_png(cx);
                 })))
+                .when(self.link_target_of_selection().is_some(), |m| {
+                    m.child(item("cm-elink", "复制对象链接", "").on_click(cx.listener(move |this, _, _, cx| {
+                        close(this);
+                        this.copy_element_link(cx);
+                    })))
+                })
                 .child(div().h(px(1.)).my(px(3.)).bg(t.border))
                 .child(item("cm-group", "成组", "⌘G").on_click(cx.listener(move |this, _, _, cx| {
                     close(this);
@@ -880,7 +989,7 @@ impl SketchEditor {
             let cropping = single.is_some_and(|e| self.crop_edit.as_deref() == Some(e.id.as_str()));
             p = p.child(title("操作")).child(
                 row()
-                    .child(ibtn("pop-dup".into(), "copy", false, "再制 ⌘D").on_click(cx.listener(|this, _, _, cx| this.duplicate(cx))))
+                    .child(ibtn("pop-dup".into(), "copy", false, "创建副本 ⌘D").on_click(cx.listener(|this, _, _, cx| this.duplicate(cx))))
                     .child(ibtn("pop-del".into(), "trash", false, "删除 ⌫").on_click(cx.listener(|this, _, _, cx| this.delete_sel(cx))))
                     .child(ibtn("pop-link".into(), "link", false, "链接").on_click(cx.listener(|this, _, w, cx| {
                         let ids: Vec<String> = this.sel.iter().cloned().collect();
@@ -1107,6 +1216,39 @@ impl SketchEditor {
 
     // ───────────── 颜色选择器 ─────────────
 
+    /// 吸管光标：吸管图标 + 右下方的实时预览色圈（官网样式）
+    pub(super) fn render_eyedropper(&self, t: &Theme) -> Option<AnyElement> {
+        self.eyedropper?;
+        if self.mermaid.is_some() || self.menu.is_some() {
+            return None;
+        }
+        let p = self.to_screen(self.mouse_world) - self.canvas_bounds.origin;
+        if p.x < px(0.) || p.y < px(0.) || p.x > self.canvas_bounds.size.width || p.y > self.canvas_bounds.size.height {
+            return None;
+        }
+        let c = self.color_under(self.mouse_world);
+        Some(
+            div()
+                .absolute()
+                // 图标笔尖（视图框 24 里的 (4,20)）对准光标
+                .left(p.x - px(3.))
+                .top(p.y - px(15.))
+                .child(icon("sk-eyedropper", 18., t.text))
+                .child(
+                    div()
+                        .absolute()
+                        .left(px(8.))
+                        .top(px(24.))
+                        .rounded_full()
+                        .shadow_md()
+                        .border_2()
+                        .border_color(hsla(0., 0., 1., 1.))
+                        .child(color_chip(&c, 30., t).rounded_full()),
+                )
+                .into_any_element(),
+        )
+    }
+
     fn render_color_picker(&self, target: PickTarget, t: &Theme, cx: &mut Context<Self>) -> AnyElement {
         let sel = self.selected();
         let sticky = if sel.is_empty() { self.tool == Tool::Sticky } else { sel.iter().all(|e| e.is_sticky()) };
@@ -1216,11 +1358,11 @@ impl SketchEditor {
                     .cursor_pointer()
                     .when(self.eyedropper == Some(target), |d| d.bg(t.accent_soft))
                     .hover(|s| s.bg(t.hover))
-                    .tooltip(|_, cx| cx.new(|_| Tooltip("吸管：点画布上的元素取色".into())).into())
-                    .child(icon("sk-eyedropper", 15., t.text))
+                    .tooltip(|_, cx| cx.new(|_| Tooltip("吸管：从画布取色（Esc 退出）".into())).into())
+                    .child(icon("sk-eyedropper", 15., if self.eyedropper == Some(target) { t.accent } else { t.text }))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.eyedropper = if this.eyedropper == Some(target) { None } else { Some(target) };
-                        this.popover = None;
+                        this.prompt = None;
                         cx.notify();
                     })),
             );
@@ -1250,6 +1392,12 @@ impl SketchEditor {
             return false;
         }
         let k = ev.keystroke.key.as_str();
+        if k == "escape" && self.eyedropper.is_some() {
+            // 先退出吸管，选择器留着
+            self.eyedropper = None;
+            cx.notify();
+            return true;
+        }
         if k == "escape" {
             self.popover = None;
             cx.notify();
@@ -1408,7 +1556,6 @@ impl SketchEditor {
         let p = self.prompt.as_ref()?;
         let title = match &p.kind {
             PromptKind::Link(_) => "链接",
-            PromptKind::Embed(_) => "嵌入网页",
             PromptKind::Hex(_) => return None,
         };
         let input = p.input.clone();
@@ -1475,6 +1622,28 @@ impl SketchEditor {
         )
     }
 
+    fn render_mermaid_preview(&self, dlg: &MermaidDlg, t: &Theme) -> AnyElement {
+        let dark = t.dark;
+        let bg = super::paint::bg_hsla(&self.doc, dark);
+        let frame = div().h(px(380.)).rounded(px(8.)).border_1().border_color(t.border).bg(bg).overflow_hidden().flex().items_center().justify_center();
+        match &dlg.preview {
+            Some(MermaidPreview::Doc(d)) => {
+                let d = d.clone();
+                frame
+                    .p(px(12.))
+                    .child(canvas(|_, _, _| (), move |b, _, window, cx| super::paint::paint_fit(&d, b, dark, window, cx)).size_full())
+                    .into_any_element()
+            }
+            Some(MermaidPreview::Image(p)) => {
+                frame.p(px(12.)).child(img(p.clone()).max_w_full().max_h_full().object_fit(ObjectFit::Contain)).into_any_element()
+            }
+            Some(MermaidPreview::Error(e)) if !e.is_empty() => {
+                frame.p(px(16.)).child(div().text_size(px(12.5)).text_color(hsla(0., 0.7, 0.5, 1.)).child(e.clone())).into_any_element()
+            }
+            _ => frame.child(div().text_size(px(12.5)).text_color(t.text_muted).child("输入 Mermaid 代码后在这里预览")).into_any_element(),
+        }
+    }
+
     pub(super) fn render_mermaid(&self, t: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
         let dlg = self.mermaid.as_ref()?;
         let btn = |id: &'static str, label: &'static str, primary: bool| {
@@ -1502,7 +1671,8 @@ impl SketchEditor {
                 .justify_center()
                 .child(
                     panel(t)
-                        .w(px(620.))
+                        .w(px(980.))
+                        .max_w(relative(0.94))
                         .p(px(18.))
                         .flex()
                         .flex_col()
@@ -1516,16 +1686,40 @@ impl SketchEditor {
                         )
                         .child(
                             div()
-                                .id("mm-src")
-                                .h(px(260.))
-                                .p(px(10.))
-                                .rounded(px(8.))
-                                .border_1()
-                                .border_color(t.border)
-                                .bg(t.code_bg)
-                                .font_family("Menlo")
-                                .overflow_y_scroll()
-                                .child(dlg.area.clone()),
+                                .flex()
+                                .gap(px(12.))
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .min_w_0()
+                                        .flex()
+                                        .flex_col()
+                                        .gap(px(6.))
+                                        .child(div().text_size(px(12.5)).text_color(t.text_muted).child("Mermaid 语法"))
+                                        .child(
+                                            div()
+                                                .id("mm-src")
+                                                .h(px(380.))
+                                                .p(px(10.))
+                                                .rounded(px(8.))
+                                                .border_1()
+                                                .border_color(t.border)
+                                                .bg(t.code_bg)
+                                                .font_family("Menlo")
+                                                .overflow_y_scroll()
+                                                .child(dlg.area.clone()),
+                                        ),
+                                )
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .min_w_0()
+                                        .flex()
+                                        .flex_col()
+                                        .gap(px(6.))
+                                        .child(div().text_size(px(12.5)).text_color(t.text_muted).child("预览"))
+                                        .child(self.render_mermaid_preview(dlg, t)),
+                                ),
                         )
                         .when_some(dlg.error.clone(), |d, e| d.child(div().text_size(px(12.5)).text_color(hsla(0., 0.7, 0.5, 1.)).child(e)))
                         .child(

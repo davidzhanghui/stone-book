@@ -126,7 +126,7 @@ fn multipoint_line_resize_group_erase(cx: &mut TestAppContext) {
         ed.release(v(0., 10.), false, window, cx);
         assert_eq!(ed.sel.len(), 2);
 
-        // 再制：数量翻倍、引用全部换新
+        // 创建副本：数量翻倍、引用全部换新
         ed.duplicate(cx);
         assert_eq!(ed.doc.live().count(), 4);
 
@@ -134,7 +134,7 @@ fn multipoint_line_resize_group_erase(cx: &mut TestAppContext) {
         ed.sel.clear();
         ed.tool = Tool::Eraser;
         let before = ed.doc.live().count();
-        // 只擦过原来那条线（再制的副本在右下 10px，曲线会向上鼓约 5px）
+        // 只擦过原来那条线（创建的副本在右下 10px，曲线会向上鼓约 5px）
         ed.press(v(50., 270.), false, false, 1, window, cx);
         ed.drag_to(v(50., 297.), false, false, cx);
         ed.release(v(50., 297.), false, window, cx);
@@ -298,4 +298,155 @@ fn crop_image_keeps_scale(cx: &mut TestAppContext) {
         assert!(svg.contains("viewBox=\"50 40 150 160\""), "{}", &svg[..svg.len().min(600)]);
     })
     .unwrap();
+}
+
+#[gpui::test]
+fn eyedropper_keeps_picker_open_and_samples_like_pixels(cx: &mut TestAppContext) {
+    use super::model::TRANSPARENT;
+    use super::view::{PickTarget, Popover};
+    cx.update(|cx| cx.set_global(crate::theme::Theme::light()));
+    let id = cx.update(|_| crate::objects::create("sketch", None));
+    let win = cx.add_window(move |_, cx| SketchEditor::new(id.clone(), cx));
+    win.update(cx, |ed, window, cx| {
+        rect_drag(ed, (0., 0.), (100., 60.), window, cx);
+        let r1 = ed.doc.elements[0].id.clone();
+        if let Some(e) = ed.doc.get_mut(&r1) {
+            e.background_color = "#ffec99".into();
+            e.stroke_color = "#e03131".into();
+        }
+        rect_drag(ed, (300., 0.), (400., 60.), window, cx);
+        let r2 = ed.doc.elements[1].id.clone();
+        assert!(ed.sel.contains(&r2));
+        // 点在填充上取背景色、点在描边上取描边色、空白处取画布底色
+        assert_eq!(ed.color_under(v(50., 30.)), "#ffec99");
+        assert_eq!(ed.color_under(v(0., 30.)), "#e03131");
+        assert_eq!(ed.color_under(v(200., 200.)), ed.doc.bg_color());
+        // 打开背景色选择器 → 吸管 → 点 r1 内部：r2 背景变黄，选择器仍开着、选区不变
+        ed.popover = Some(Popover::Color(PickTarget::Bg));
+        ed.eyedropper = Some(PickTarget::Bg);
+        let ev = gpui::MouseDownEvent {
+            button: gpui::MouseButton::Left,
+            position: ed.to_screen(v(50., 30.)),
+            modifiers: Default::default(),
+            click_count: 1,
+            first_mouse: false,
+        };
+        ed.mouse_down(&ev, window, cx);
+        assert_eq!(ed.doc.get(&r2).unwrap().background_color, "#ffec99");
+        assert_eq!(ed.popover, Some(Popover::Color(PickTarget::Bg)));
+        assert!(ed.eyedropper.is_none());
+        assert!(ed.sel.contains(&r2) && ed.sel.len() == 1);
+        assert_ne!(ed.doc.get(&r2).unwrap().background_color, TRANSPARENT);
+    })
+    .unwrap();
+}
+
+#[gpui::test]
+fn arrow_start_snaps_to_outline_while_dragging(cx: &mut TestAppContext) {
+    cx.update(|cx| cx.set_global(crate::theme::Theme::light()));
+    let id = cx.update(|_| crate::objects::create("sketch", None));
+    let win = cx.add_window(move |_, cx| SketchEditor::new(id.clone(), cx));
+    win.update(cx, |ed, window, cx| {
+        rect_drag(ed, (0., 0.), (100., 60.), window, cx);
+        let r1 = ed.doc.elements[0].id.clone();
+        ed.tool = Tool::Arrow;
+        // 悬停：高亮目标，靠近边缘才出吸附点
+        ed.mouse_world = v(99., 30.);
+        assert_eq!(ed.bind_target(v(99., 30.), ""), Some(r1.clone()));
+        let t = ed.doc.get(&r1).unwrap().clone();
+        assert!(ed.bind_dot(&t).is_some_and(|d| (d.x - 100.).abs() < 0.5));
+        ed.mouse_world = v(50., 30.);
+        assert!(ed.bind_dot(&t).is_none(), "形状正中不出吸附点");
+        // 从内部起拖：鼠标出了形状，起点就贴到轮廓（不必等松手）
+        ed.press(v(50., 30.), false, false, 1, window, cx);
+        ed.drag_to(v(250., 30.), false, false, cx);
+        let a = ed.doc.live().find(|e| e.kind == "arrow").unwrap().clone();
+        let p0 = geom::world_points(&a)[0];
+        assert!((p0.x - 104.).abs() < 0.5 && (p0.y - 30.).abs() < 0.5, "{p0:?}");
+        // 拖回形状内：起点回到按下处
+        ed.drag_to(v(70., 30.), false, false, cx);
+        let a = ed.doc.get(&a.id).unwrap();
+        assert!(geom::world_points(a)[0].dist(v(50., 30.)) < 0.5);
+        ed.drag_to(v(250., 30.), false, false, cx);
+        ed.release(v(250., 30.), false, window, cx);
+        let a = ed.doc.live().find(|e| e.kind == "arrow").unwrap();
+        assert_eq!(a.binding(true).unwrap().element_id, r1);
+        assert!(ed.link_start.is_none());
+    })
+    .unwrap();
+}
+
+#[gpui::test]
+fn transparent_shape_drag_from_box_and_element_link(cx: &mut TestAppContext) {
+    cx.update(|cx| cx.set_global(crate::theme::Theme::light()));
+    let id = cx.update(|_| crate::objects::create("sketch", None));
+    let oid = id.clone();
+    let win = cx.add_window(move |_, cx| SketchEditor::new(oid.clone(), cx));
+    win.update(cx, |ed, window, cx| {
+        rect_drag(ed, (0., 0.), (100., 60.), window, cx);
+        rect_drag(ed, (300., 0.), (400., 60.), window, cx);
+        let r1 = ed.doc.elements[0].id.clone();
+        let r2 = ed.doc.elements[1].id.clone();
+        assert!(!ed.doc.get(&r1).unwrap().has_fill(), "默认透明背景");
+
+        // 透明且未选中：点内部不选中（官网只认边框）
+        ed.tool = Tool::Select;
+        ed.sel.clear();
+        ed.press(v(50., 30.), false, false, 1, window, cx);
+        ed.release(v(50., 30.), false, window, cx);
+        assert!(ed.sel.is_empty());
+
+        // 点边框选中后：外框内空白处可直接拖动
+        ed.press(v(0., 30.), false, false, 1, window, cx);
+        ed.release(v(0., 30.), false, window, cx);
+        assert!(ed.sel.contains(&r1));
+        assert!(ed.in_sel_box(v(50., 30.)));
+        ed.press(v(50., 30.), false, false, 1, window, cx);
+        ed.drag_to(v(60., 40.), false, false, cx);
+        ed.drag_to(v(70., 50.), false, false, cx);
+        ed.release(v(70., 50.), false, window, cx);
+        let e = ed.doc.get(&r1).unwrap();
+        assert_eq!((e.x, e.y), (20., 20.));
+        assert!(ed.sel.contains(&r1));
+        // 外框内单击不拖：取消选择
+        ed.press(v(70., 50.), false, false, 1, window, cx);
+        ed.release(v(70., 50.), false, window, cx);
+        assert!(ed.sel.is_empty());
+
+        // 元素链接：r2 的对象链接设到 r1 上，点击后选中 r2
+        ed.sel = [r2.clone()].into_iter().collect();
+        let link = super::tools::element_link(&ed.link_target_of_selection().unwrap());
+        assert_eq!(super::tools::element_link_id(&link), Some(r2.as_str()));
+        ed.sel.clear();
+        ed.follow_link(&link, cx);
+        assert_eq!(ed.sel.iter().cloned().collect::<Vec<_>>(), vec![r2.clone()]);
+        assert_eq!(super::tools::normalize_link("example.com"), "https://example.com");
+    });
+}
+
+#[gpui::test]
+fn view_mode_is_read_only(cx: &mut TestAppContext) {
+    cx.update(|cx| cx.set_global(crate::theme::Theme::light()));
+    let id = cx.update(|_| crate::objects::create("sketch", None));
+    let oid = id.clone();
+    let win = cx.add_window(move |_, cx| SketchEditor::new(oid.clone(), cx));
+    win.update(cx, |ed, window, cx| {
+        rect_drag(ed, (0., 0.), (100., 60.), window, cx);
+        rect_drag(ed, (300., 0.), (400., 60.), window, cx);
+        let (r1, r2) = (ed.doc.elements[0].id.clone(), ed.doc.elements[1].id.clone());
+        ed.sel = [r1.clone()].into_iter().collect();
+        let l = super::tools::element_link(&r2);
+        ed.apply_prompt(&super::view::PromptKind::Link(vec![r1.clone()]), &l, cx);
+
+        ed.toggle_view_mode(cx);
+        assert!(ed.view_mode && ed.sel.is_empty(), "进入查看模式清空选区");
+        // 点边框能取到链接；点元素外取不到
+        assert_eq!(ed.link_at(v(0., 30.)).as_deref(), Some(l.as_str()));
+        assert!(ed.link_at(v(200., 200.)).is_none());
+        // 跳转只定位不选中
+        ed.follow_link(&l, cx);
+        assert!(ed.sel.is_empty());
+        ed.toggle_view_mode(cx);
+        assert!(!ed.view_mode);
+    });
 }

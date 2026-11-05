@@ -68,7 +68,6 @@ pub fn body(name: &str) -> Option<&'static str> {
         "sk-sticky" => r##"<path d="M5 5h14v9l-5 5H5z"/><path d="M14 19v-5h5"/><path d="M8.5 9h7M8.5 12.5h4"/>"##,
         "sk-more" => r##"<circle cx="12" cy="5" r="1" fill="#000"/><circle cx="12" cy="12" r="1" fill="#000"/><circle cx="12" cy="19" r="1" fill="#000"/>"##,
         "sk-frame" => r##"<path d="M4 7h16M4 17h16M7 4v16M17 4v16"/>"##,
-        "sk-embed" => r##"<path d="M8 8l-4 4 4 4M16 8l4 4-4 4"/>"##,
         "sk-draw-shape" => r##"<circle cx="9" cy="9" r="5"/><rect x="10" y="10" width="10" height="10" rx="2"/>"##,
         "sk-laser" => {
             r##"<path d="M10 14 4 20"/><path d="M14.5 9.5l-2 2 1 1 2-2zM13 6l1-3M18 11l3-1M17 7l2-2M15.5 4.5l.01 0M19.5 8.5l.01 0" stroke-width="1.6"/><path d="M8.5 15.5l-2-2 3-3 2 2z"/>"##

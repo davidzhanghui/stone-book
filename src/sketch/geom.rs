@@ -209,7 +209,8 @@ pub fn hit(e: &Element, p: V, tol: f64) -> bool {
             let c = center(e);
             let q = p.rot(-e.angle, c);
             let (x0, y0, x1, y1) = (e.x, e.y, e.x + e.width, e.y + e.height);
-            let filled = e.has_fill() || matches!(e.kind.as_str(), "text" | "image" | "iframe" | "embeddable" | "stickynote");
+            // 与官网 shouldTestInside 一致：有填充、带绑定文字、文字 / 图片 / 嵌入才算内部；透明形状只认边框
+            let filled = e.has_fill() || e.bound_text_id().is_some() || matches!(e.kind.as_str(), "text" | "image" | "iframe" | "embeddable" | "stickynote");
             match e.kind.as_str() {
                 "ellipse" => {
                     let (a, b) = ((e.width / 2.).max(1.), (e.height / 2.).max(1.));
@@ -306,6 +307,51 @@ pub fn bound_point(t: &Element, b: &Binding, toward: V) -> V {
         return p;
     }
     p.add(d.scale(b.gap.max(0.) / l))
+}
+
+/// 元素轮廓（世界坐标折线，闭合）：绑定高亮沿真实形状画，而不是外接框。
+pub fn outline_poly(e: &Element) -> Vec<V> {
+    let c = center(e);
+    let (w, h) = (e.width.abs(), e.height.abs());
+    let (x0, y0) = (c.x - w / 2., c.y - h / 2.);
+    let local: Vec<V> = match e.kind.as_str() {
+        "ellipse" => (0..72)
+            .map(|i| {
+                let a = i as f64 / 72. * std::f64::consts::TAU;
+                v(c.x + a.cos() * w / 2., c.y + a.sin() * h / 2.)
+            })
+            .collect(),
+        "diamond" => vec![v(c.x, y0), v(x0 + w, c.y), v(c.x, y0 + h), v(x0, c.y)],
+        _ => {
+            let r = corner_radius(e).min(w / 2.).min(h / 2.);
+            if r < 0.5 {
+                vec![v(x0, y0), v(x0 + w, y0), v(x0 + w, y0 + h), v(x0, y0 + h)]
+            } else {
+                let mut out = vec![];
+                // 四个圆角：右上、右下、左下、左上（顺时针）
+                for (cx, cy, a0) in [(x0 + w - r, y0 + r, -90.), (x0 + w - r, y0 + h - r, 0.), (x0 + r, y0 + h - r, 90.), (x0 + r, y0 + r, 180.)] {
+                    for k in 0..=8 {
+                        let a = (a0 + 90. * k as f64 / 8.).to_radians();
+                        out.push(v(cx + a.cos() * r, cy + a.sin() * r));
+                    }
+                }
+                out
+            }
+        }
+    };
+    local.into_iter().map(|p| p.rot(e.angle, c)).collect()
+}
+
+/// 绑定落点：沿「中心 → toward」射线与轮廓的交点，再向外留 gap（与松手后 update_bound_arrows 一致）。
+pub fn snap_point(t: &Element, toward: V, gap: f64) -> V {
+    let p = focus_point(t, toward);
+    let d = p.sub(center(t));
+    let l = d.len();
+    if l < 1e-6 {
+        p
+    } else {
+        p.add(d.scale(gap / l))
+    }
 }
 
 /// 找到 p 附近可绑定的元素（从上往下）。

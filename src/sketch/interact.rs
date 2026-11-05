@@ -29,14 +29,16 @@ impl SketchEditor {
         // 焦点由我们自己管：不让外层容器在冒泡阶段把焦点抢回去（否则新建文字后的输入框拿不到焦点）
         window.prevent_default();
         self.menu = None;
-        self.popover = None;
         self.prompt = None;
+        // 吸管取色：颜色选择器不关（官网行为），选区也不动
         if let Some(target) = self.eyedropper.take() {
             let w = self.to_world(ev.position);
             self.pick_color_at(w, target, cx);
             return;
         }
-        if ev.button == MouseButton::Middle || self.space_down || self.tool == Tool::Hand {
+        self.popover = None;
+        if ev.button == MouseButton::Middle || self.space_down || self.tool == Tool::Hand || self.view_mode {
+            // 查看模式：按下一律当平移，松开时没怎么动才算「点击」（见 mouse_up）
             self.drag = Some(Drag::Pan { start: ev.position, orig: self.offset });
             cx.notify();
             return;
@@ -47,6 +49,9 @@ impl SketchEditor {
 
     pub(super) fn right_down(&mut self, ev: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         window.focus(&self.focus);
+        if self.view_mode {
+            return;
+        }
         self.finish_edit(cx);
         let w = self.to_world(ev.position);
         if let Some(id) = self.hit_at(w) {
@@ -62,10 +67,23 @@ impl SketchEditor {
     pub(super) fn mouse_move(&mut self, ev: &MouseMoveEvent, window: &mut Window, cx: &mut Context<Self>) {
         let w = self.to_world(ev.position);
         self.mouse_world = w;
+        if self.eyedropper.is_some() {
+            // 光标旁的预览色圈跟随
+            cx.notify();
+            return;
+        }
         if let Some(Drag::Pan { start, orig }) = &self.drag {
             let d = ev.position - *start;
             self.offset = crate::canvas::pt(orig.x + f32::from(d.x), orig.y + f32::from(d.y));
             cx.notify();
+            return;
+        }
+        if self.view_mode {
+            let l = self.link_at(w).is_some();
+            if l != self.hover_link {
+                self.hover_link = l;
+                cx.notify();
+            }
             return;
         }
         if self.drag.is_some() {
@@ -87,10 +105,33 @@ impl SketchEditor {
             self.hover_handle = h;
             cx.notify();
         }
+        // 悬停在能拖动的元素或选区外框上：四向箭头光标（官网同款）
+        let mv = self.tool == Tool::Select && h.is_none() && !self.space_down && self.editing.is_none() && (self.hit_at(w).is_some() || self.in_sel_box(w));
+        if mv != self.hover_move {
+            self.hover_move = mv;
+            cx.notify();
+        }
+        // 箭头工具悬停：可绑定的形状亮出轮廓，靠近边缘时出现吸附点（官网同款）
+        let hint = if self.tool == Tool::Arrow && !self.space_down { self.bind_target(w, "") } else { None };
+        if hint.is_some() || hint != self.bind_hint {
+            self.bind_hint = hint;
+            cx.notify();
+        }
     }
 
     pub(super) fn mouse_up(&mut self, ev: &MouseUpEvent, window: &mut Window, cx: &mut Context<Self>) {
         if matches!(self.drag, Some(Drag::Pan { .. }) | Some(Drag::Slider)) {
+            // 查看模式：几乎没拖动 = 点击，点到带链接的元素就打开链接
+            if let Some(Drag::Pan { start, .. }) = &self.drag {
+                let d = ev.position - *start;
+                if self.view_mode && f32::from(d.x).hypot(f32::from(d.y)) < 4. && ev.button == MouseButton::Left {
+                    if let Some(l) = self.link_at(self.to_world(ev.position)) {
+                        self.drag = None;
+                        self.follow_link(&l, cx);
+                        return;
+                    }
+                }
+            }
             self.drag = None;
             cx.notify();
             return;
@@ -179,7 +220,7 @@ impl SketchEditor {
         match self.tool {
             Tool::Select => self.press_select(w, shift, alt, clicks, window, cx),
             Tool::Hand => {}
-            Tool::Rect | Tool::Diamond | Tool::Ellipse | Tool::Frame | Tool::Sticky | Tool::Embed => {
+            Tool::Rect | Tool::Diamond | Tool::Ellipse | Tool::Frame | Tool::Sticky => {
                 self.snapshot();
                 let p = self.snap(w);
                 let mut e = Element::new(self.tool.kind().unwrap(), p.x, p.y);
@@ -229,6 +270,9 @@ impl SketchEditor {
                 let id = e.id.clone();
                 self.doc.elements.push(e);
                 self.sel.clear();
+                // 箭头从形状上（边缘或内部）起拖：记下起点形状，拖动时起点实时吸到轮廓
+                self.link_start = if self.tool == Tool::Arrow { self.bind_target(p, &id).map(|t| (t, p)) } else { None };
+                self.bind_hint = None;
                 self.drag = Some(Drag::Linear { id, start: p });
             }
             Tool::Lasso => {
@@ -370,7 +414,23 @@ impl SketchEditor {
                     self.duplicate_offset(0., 0.);
                 }
                 let orig = self.move_set().into_iter().filter_map(|id| self.doc.get(&id).map(|e| (id.clone(), e.x, e.y))).collect();
-                self.drag = Some(Drag::Move { start: w, orig, moved: alt });
+                self.drag = Some(Drag::Move { start: w, orig, moved: alt, from_box: false });
+            }
+            None if !shift && self.in_sel_box(w) => {
+                // 没点中元素本身，但在选区外框里：照样拖动整个选区
+                if clicks >= 2 {
+                    match self.single().map(|e| e.id.clone()) {
+                        Some(id) => self.double_click(&id, w, window, cx),
+                        None => self.new_text_at(w, window, cx),
+                    }
+                    return;
+                }
+                if alt {
+                    self.snapshot();
+                    self.duplicate_offset(0., 0.);
+                }
+                let orig = self.move_set().into_iter().filter_map(|id| self.doc.get(&id).map(|e| (id.clone(), e.x, e.y))).collect();
+                self.drag = Some(Drag::Move { start: w, orig, moved: alt, from_box: true });
             }
             None => {
                 if clicks >= 2 {
@@ -403,9 +463,9 @@ impl SketchEditor {
         } else if e.kind == "image" {
             self.toggle_crop(cx);
         } else if matches!(e.kind.as_str(), "embeddable" | "iframe") {
-            match e.link() {
-                Some(l) => cx.open_url(l),
-                None => self.open_prompt(PromptKind::Embed(id.to_string()), "", window, cx),
+            // 官网文件里带来的嵌入网页：只保留数据，双击在浏览器打开
+            if let Some(l) = e.link() {
+                cx.open_url(l);
             }
         } else if e.is_frame() {
             self.start_frame_name_edit(id, window, cx);
@@ -465,6 +525,43 @@ impl SketchEditor {
         }
     }
 
+    /// 绑定高亮上的吸附点：拖端点时是端点松手后的落点；箭头工具悬停时是离光标最近的轮廓点（够近才显示）。
+    pub(super) fn bind_dot(&self, t: &Element) -> Option<V> {
+        let neighbor = |id: &str, idx: Option<usize>| -> Option<V> {
+            let pts = geom::world_points(self.doc.get(id)?);
+            let n = pts.len();
+            if n < 2 {
+                return None;
+            }
+            Some(match idx {
+                Some(0) => pts[1],
+                Some(i) => pts[i.min(n - 1) - 1],
+                None => pts[n - 2],
+            })
+        };
+        let nb = match (&self.drag, &self.multi) {
+            (Some(Drag::Linear { id, .. }), _) => neighbor(id, None),
+            (Some(Drag::Point { id, idx }), _) => neighbor(id, Some(*idx)),
+            (None, Some(id)) => neighbor(id, None),
+            _ => None,
+        };
+        if self.drag.is_some() || self.multi.is_some() {
+            // 还在起点形状里：不显示落点
+            if matches!(self.drag, Some(Drag::Linear { .. })) && self.link_start.as_ref().is_some_and(|(s, _)| s == &t.id) {
+                return None;
+            }
+            let nb = nb?;
+            let elbow = [self.multi.as_ref(), if let Some(Drag::Linear { id, .. } | Drag::Point { id, .. }) = &self.drag { Some(id) } else { None }]
+                .into_iter()
+                .flatten()
+                .any(|id| self.doc.get(id).is_some_and(|e| e.elbowed()));
+            return Some(if elbow { geom::elbow_side_point(t, nb, 4.).0 } else { geom::snap_point(t, nb, 4.) });
+        }
+        let m = self.mouse_world;
+        let q = geom::focus_point(t, m);
+        (q.dist(m) * self.zoom as f64 <= geom::BIND_DIST).then_some(q)
+    }
+
     pub(super) fn bind_target(&self, p: V, except: &str) -> Option<String> {
         let tol = (geom::BIND_DIST / self.zoom as f64).max(4.);
         // 不绑定到自己的标签文字上
@@ -477,9 +574,9 @@ impl SketchEditor {
         let zoom = self.zoom as f64;
         let Some(drag) = self.drag.take() else { return };
         let drag = match drag {
-            Drag::Move { start, orig, moved } => {
+            Drag::Move { start, orig, moved, from_box } => {
                 if !moved && start.dist(w) * zoom < 3. {
-                    Drag::Move { start, orig, moved }
+                    Drag::Move { start, orig, moved, from_box }
                 } else {
                     if !moved {
                         self.snapshot();
@@ -509,7 +606,7 @@ impl SketchEditor {
                         }
                     }
                     geom::update_bound_arrows(&mut self.doc, &ids);
-                    Drag::Move { start, orig, moved: true }
+                    Drag::Move { start, orig, moved: true, from_box }
                 }
             }
             Drag::Resize { handle, orig, bounds, single } => {
@@ -571,7 +668,13 @@ impl SketchEditor {
                 let elbow = self.doc.get(&id).is_some_and(|e| e.elbowed());
                 if elbow {
                     // 折线箭头：起点（可能吸在形状边上）到鼠标走正交线
-                    let st = self.doc.get(&id).and_then(|e| e.binding(true)).and_then(|b| self.doc.get(&b.element_id).cloned());
+                    let st = self
+                        .doc
+                        .get(&id)
+                        .and_then(|e| e.binding(true))
+                        .map(|b| b.element_id)
+                        .or_else(|| self.link_start.as_ref().map(|(t, _)| t.clone()))
+                        .and_then(|t| self.doc.get(&t).cloned());
                     let (a, ha) = match &st {
                         Some(t) => {
                             let (q, h) = geom::elbow_side_point(t, p, 4.);
@@ -594,12 +697,26 @@ impl SketchEditor {
                         e.normalize_points();
                         e.bump();
                     }
-                } else if let Some(e) = self.doc.get_mut(&id) {
-                    let rel = [p.x - e.x, p.y - e.y];
-                    if let Some(l) = e.points.as_mut().and_then(|p| p.last_mut()) {
-                        *l = rel;
+                } else {
+                    // 起点在形状上：鼠标出了形状就把起点吸到轮廓（朝鼠标方向），回到形状内则回到按下处
+                    let start_pt = self.link_start.as_ref().and_then(|(sid, press)| {
+                        let t = self.doc.get(sid)?;
+                        let tol = 2. / self.zoom as f64;
+                        Some(if geom::inside_shape(t, p) || geom::hit(t, p, tol) { *press } else { geom::snap_point(t, p, 4.) })
+                    });
+                    if let Some(e) = self.doc.get_mut(&id) {
+                        let mut pts = geom::abs_points(e);
+                        if let Some(l) = pts.last_mut() {
+                            *l = p;
+                        }
+                        if let Some(s0) = start_pt {
+                            pts[0] = s0;
+                        }
+                        e.x = pts[0].x;
+                        e.y = pts[0].y;
+                        e.points = Some(pts.iter().map(|q| [q.x - pts[0].x, q.y - pts[0].y]).collect());
+                        e.bump();
                     }
-                    e.bump();
                 }
                 Drag::Linear { id, start }
             }
@@ -903,7 +1020,7 @@ impl SketchEditor {
     pub fn release(&mut self, w: V, _shift: bool, window: &mut Window, cx: &mut Context<Self>) {
         let Some(drag) = self.drag.take() else { return };
         match drag {
-            Drag::Create { id, start } if self.doc.get(&id).is_some_and(|e| e.is_sticky() || e.kind == "embeddable") => {
+            Drag::Create { id, start } if self.doc.get(&id).is_some_and(|e| e.is_sticky()) => {
                 self.finish_special_create(&id, start, window, cx);
             }
             Drag::Create { id, .. } => {
@@ -949,11 +1066,14 @@ impl SketchEditor {
                 self.bind_hint = None;
                 self.commit(cx);
             }
-            Drag::Move { orig, moved, .. } => {
+            Drag::Move { orig, moved, from_box, .. } => {
                 if moved {
                     let ids: Vec<String> = orig.iter().map(|(id, _, _)| id.clone()).collect();
                     self.update_frame_membership(&ids);
                     self.commit(cx);
+                } else if from_box {
+                    // 单击外框内空白处（没拖）：取消选择
+                    self.sel.clear();
                 }
             }
             Drag::Resize { .. } | Drag::Rotate { .. } => self.commit(cx),
@@ -1003,6 +1123,7 @@ impl SketchEditor {
         if self.multi.is_none() {
             self.bind_hint = None;
         }
+        self.link_start = None;
         cx.notify();
     }
 
