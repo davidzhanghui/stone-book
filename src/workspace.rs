@@ -13,7 +13,10 @@ use gpui::*;
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
+mod graph;
 mod panels;
+mod present;
+mod review;
 mod shortcuts_panel;
 
 actions!(
@@ -44,7 +47,8 @@ actions!(
         Present,
         ToggleReadMode,
         ShowShortcuts,
-        ExportDocxXml
+        ExportDocxXml,
+        ReviewCards
     ]
 );
 
@@ -81,6 +85,9 @@ pub struct Workspace {
     outline: (u64, Vec<(usize, u8, SharedString)>),
     /// 反向链接缓存：(文档 ID, 文档列表签名, 链接到它的文档)
     backlinks: (String, u64, Vec<(String, String)>),
+    /// 未链接的提及缓存：(文档 ID, 文档列表签名, 结果)
+    mentions: (String, u64, Vec<(String, String)>),
+    graph: Option<graph::Graph>,
     /// 上次同步给编辑器 `@` 菜单的文档列表签名
     doc_list_sig: u64,
     outline_scroll: UniformListScrollHandle,
@@ -101,7 +108,9 @@ pub struct Workspace {
     palette: Option<(Entity<LineInput>, Subscription, usize)>,
     /// 快捷键面板（⌘/）
     shortcuts_panel: Option<shortcuts_panel::ShortcutsPanel>,
-    slides: Option<(Vec<panels::Slide>, usize)>,
+    slides: Option<(Vec<present::Slide>, usize)>,
+    present_ui: present::PresentUi,
+    review: Option<review::Review>,
     present_focus: FocusHandle,
     present_fullscreen: bool,
     /// 全屏打开的嵌入对象编辑器
@@ -147,6 +156,33 @@ impl Workspace {
             "sheet" => {
                 let v = cx.new(|cx| crate::sheet::SheetEditor::new(id.to_string(), window, cx));
                 let sub = cx.subscribe_in(&v, window, |this, _, _: &crate::sheet::SheetEvent, window, cx| this.close_embed(window, cx));
+                let fh = v.focus_handle(cx);
+                window.focus(&fh);
+                self.embed = Some((v.into(), fh, sub));
+            }
+            "pdfdoc" => {
+                // id 可以带上摘录链接的定位参数：`<对象>?page=..&annot=..`
+                let Some((obj, page, annot)) = crate::pdfdoc::pdf_link_target(&format!("{}{id}", crate::pdfdoc::PDF_LINK_PREFIX)) else { return };
+                if crate::objects::pdf(&obj).is_none() {
+                    self.show_toast("这份 PDF 已被删除".into(), cx);
+                    return;
+                }
+                let goto = id.contains('?').then_some((page, annot));
+                let v = cx.new(|cx| crate::pdfdoc::view::PdfReader::new(obj, goto, window, cx));
+                let sub = cx.subscribe_in(&v, window, |this, reader, ev: &crate::pdfdoc::view::PdfEvent, window, cx| match ev {
+                    crate::pdfdoc::view::PdfEvent::Close => this.close_embed(window, cx),
+                    crate::pdfdoc::view::PdfEvent::Excerpt { annot } => {
+                        let obj = reader.read(cx).obj.clone();
+                        let annot = annot.clone();
+                        this.editor.update(cx, |e, cx| e.insert_pdf_excerpt(&obj, &annot, cx));
+                        this.show_toast("已摘录到正文（PDF 块下方）".into(), cx);
+                    }
+                    crate::pdfdoc::view::PdfEvent::MakeCard { annot } => {
+                        let obj = reader.read(cx).obj.clone();
+                        let (front, back) = if annot.text.is_empty() { (annot.note.clone(), String::new()) } else { (annot.text.clone(), annot.note.clone()) };
+                        this.editor.update(cx, |e, cx| e.insert_card_after_embed(&obj, &front, &back, cx));
+                    }
+                });
                 let fh = v.focus_handle(cx);
                 window.focus(&fh);
                 self.embed = Some((v.into(), fh, sub));
@@ -226,7 +262,16 @@ impl Workspace {
         self.editor.update(cx, |e, cx| e.save_now(cx));
         let content = self.editor.read(cx).content.clone();
         let name = content.blocks.first().map(|b| b.text.text.clone()).filter(|t| !t.trim().is_empty()).unwrap_or_else(|| "未命名模板".into());
-        let blocks: Vec<crate::model::Block> = content.blocks.iter().map(|b| (**b).clone()).collect();
+        // 折叠状态是视图状态，模板里不带
+        let blocks: Vec<crate::model::Block> = content
+            .blocks
+            .iter()
+            .map(|b| {
+                let mut b = (**b).clone();
+                b.collapsed = false;
+                b
+            })
+            .collect();
         self.store.save_template(&name, &crate::model::blocks_to_json(&blocks));
         self.show_toast(format!("已保存为模板「{name}」"), cx);
     }
@@ -573,6 +618,8 @@ impl Workspace {
             last_title,
             outline: (0, vec![]),
             backlinks: (String::new(), 0, vec![]),
+            mentions: (String::new(), 0, vec![]),
+            graph: None,
             doc_list_sig: 0,
             outline_scroll: UniformListScrollHandle::new(),
             outline_current: None,
@@ -590,6 +637,8 @@ impl Workspace {
             slides: None,
             present_focus: cx.focus_handle(),
             present_fullscreen: false,
+            present_ui: Default::default(),
+            review: None,
             embed: None,
             _subs: vec![sub, appearance, author_sub],
             _error_poll: Self::poll_store_errors(cx),
@@ -714,6 +763,16 @@ impl Workspace {
             self.backlinks = (self.current.clone(), sig, self.store.backlinks(&self.current));
         }
         &self.backlinks.2
+    }
+
+    /// 当前文档的未链接提及。
+    fn current_mentions(&mut self) -> &[(String, String)] {
+        let sig = self.docs_sig();
+        if self.mentions.0 != self.current || self.mentions.1 != sig {
+            let title = self.docs.iter().find(|d| d.id == self.current).map(|d| d.title.clone()).unwrap_or_default();
+            self.mentions = (self.current.clone(), sig, self.store.unlinked_mentions(&self.current, &title));
+        }
+        &self.mentions.2
     }
 
     fn reload_docs(&mut self) {
@@ -1949,9 +2008,11 @@ impl Workspace {
             .child(self.render_backlinks(t, cx))
     }
 
-    /// 大纲下方：引用了当前文档的文档，点击打开。
+    /// 大纲下方：引用了当前文档的文档，点击打开；再往下是「未链接的提及」，可一键转为链接。
     fn render_backlinks(&mut self, t: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
         let links = self.current_backlinks().to_vec();
+        let mentions = self.current_mentions().to_vec();
+        let title = self.docs.iter().find(|d| d.id == self.current).map(|d| d.title.clone()).unwrap_or_default();
         div()
             .flex_none()
             .mt(px(12.))
@@ -1988,6 +2049,80 @@ impl Workspace {
                     }))
                     .on_click(cx.listener(move |this, _, w, cx| this.open_doc(&id, w, cx)))
             }))
+            .when(!mentions.is_empty(), |d| {
+                d.child(div().px(px(12.)).pt(px(12.)).pb(px(6.)).text_size(px(12.)).text_color(t.text_muted).child(format!(
+                    "{} · {}",
+                    crate::i18n::tr("未链接的提及"),
+                    mentions.len()
+                )))
+                .children(mentions.into_iter().take(20).enumerate().map(|(k, (id, mtitle))| {
+                    let (id2, title2) = (id.clone(), title.clone());
+                    div()
+                        .id(("mention-doc", k))
+                        .group("mention-row")
+                        .flex()
+                        .items_center()
+                        .gap(px(6.))
+                        .px(px(12.))
+                        .h(px(28.))
+                        .rounded(px(5.))
+                        .cursor_pointer()
+                        .text_size(px(13.))
+                        .text_color(t.text_secondary)
+                        .hover(|s| s.bg(t.hover).text_color(t.text))
+                        .child(icon("file", 13., t.text_muted))
+                        .child(div().flex_1().overflow_hidden().whitespace_nowrap().text_ellipsis().child(if mtitle.trim().is_empty() {
+                            "未命名文档".to_string()
+                        } else {
+                            mtitle
+                        }))
+                        .child(
+                            div()
+                                .id(("mention-link", k))
+                                .invisible()
+                                .group_hover("mention-row", |s| s.visible())
+                                .px(px(6.))
+                                .rounded(px(4.))
+                                .text_size(px(11.))
+                                .text_color(t.accent)
+                                .hover(|s| s.bg(t.accent_soft))
+                                .child(crate::i18n::tr("转为链接"))
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    cx.stop_propagation();
+                                    let cur = this.current.clone();
+                                    if this.store.link_mention(&id2, &cur, &title2) {
+                                        this.reload_docs();
+                                        this.backlinks.1 = 0;
+                                        this.mentions.1 = 0;
+                                        this.show_toast("已转为链接".into(), cx);
+                                    }
+                                    cx.notify();
+                                })),
+                        )
+                        .on_click(cx.listener(move |this, _, w, cx| this.open_doc(&id, w, cx)))
+                }))
+            })
+            .child(
+                div()
+                    .id("open-graph")
+                    .mx(px(12.))
+                    .mt(px(12.))
+                    .h(px(28.))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .gap(px(6.))
+                    .rounded(px(6.))
+                    .border_1()
+                    .border_color(t.border)
+                    .cursor_pointer()
+                    .text_size(px(12.))
+                    .text_color(t.text_secondary)
+                    .hover(|s| s.bg(t.hover))
+                    .child(icon("sitemap", 13., t.text_muted))
+                    .child(crate::i18n::tr("文档图谱"))
+                    .on_click(cx.listener(|this, _, w, cx| this.open_graph(w, cx))),
+            )
     }
 
     fn render_switcher(&self, t: &Theme, cx: &mut Context<Self>) -> Option<impl IntoElement> {
@@ -2238,6 +2373,7 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::export_backup))
             .on_action(cx.listener(Self::restore_backup))
             .on_action(cx.listener(Self::present))
+            .on_action(cx.listener(Self::review_cards))
             .on_action(cx.listener(Self::toggle_perf))
             .on_action(cx.listener(Self::toggle_read_mode))
             .on_action(cx.listener(Self::show_shortcuts))
@@ -2272,6 +2408,8 @@ impl Render for Workspace {
             .children(self.render_palette(&t, cx))
             .children(self.render_shortcuts_panel(&t, cx))
             .children(self.render_present(window, cx))
+            .children(self.render_review(cx))
+            .children(self.render_graph(window, cx))
             .when_some(self.embed.as_ref().map(|e| e.0.clone()), |d, v| d.child(div().absolute().inset_0().occlude().child(v)))
             .children(self.render_toast(&t))
     }

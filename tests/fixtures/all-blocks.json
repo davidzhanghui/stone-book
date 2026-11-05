@@ -203,6 +203,17 @@
       }
     },
     {
+      "type": "notes",
+      "text": {
+        "text": "演讲者备注",
+        "spans": [
+          {
+            "len": 15
+          }
+        ]
+      }
+    },
+    {
       "type": "image",
       "path": "assets/a.png",
       "alt": "描述",
@@ -460,6 +471,39 @@
       "width": 480.0,
       "text": {
         "text": ""
+      }
+    },
+    {
+      "type": "flashcard",
+      "back": {
+        "text": "答案",
+        "spans": [
+          {
+            "len": 6
+          }
+        ]
+      },
+      "card_id": "card-1",
+      "sched": {
+        "1": {
+          "due": 1800000000000,
+          "stability": 2.5,
+          "difficulty": 0.0,
+          "elapsed_days": 0,
+          "scheduled_days": 0,
+          "reps": 1,
+          "lapses": 0,
+          "state": 2,
+          "last": 0
+        }
+      },
+      "text": {
+        "text": "首都是{{c1::北京}}",
+        "spans": [
+          {
+            "len": 23
+          }
+        ]
       }
     },
     {

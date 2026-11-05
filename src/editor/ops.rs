@@ -17,6 +17,9 @@ pub enum SlashAction {
     Date,
     Link,
     File,
+    Pdf,
+    Flashcard,
+    Drawio,
     Sync,
     Math,
     Template,
@@ -86,6 +89,7 @@ pub fn slash_items() -> Vec<SlashItem> {
         ),
         it("常用", Svg("image"), 0xf5a339, "图片", "", "image img tp tupian picture", SlashAction::Image),
         it("常用", Svg("paperclip"), 0x0ea5e9, "视频或文件", "", "file video sp wj shipin wenjian fujian attachment shipinhuowenjian", SlashAction::File),
+        it("常用", Svg("book-open"), 0xf54a45, "PDF 阅读", "", "pdf yuedu pzyd pizhu biaozhu gaoliang annotate read", SlashAction::Pdf),
         it("常用", Svg("table"), 0x14b8a6, "表格", "", "table bg biaoge", SlashAction::Table),
         it("常用", Svg("columns"), 0x5b5bd6, "分栏", "", "columns fl fenlan grid", SlashAction::Columns),
         it(
@@ -97,6 +101,8 @@ pub fn slash_items() -> Vec<SlashItem> {
             "callout glk gaoliang highlight gaoliangkuai",
             SlashAction::Kind(Callout { emoji: "💡".into(), color: 5 }),
         ),
+        it("常用", Svg("book"), 0x7f3bf5, "闪卡", "", "flashcard card sk shanka fuxi anki cloze wakong", SlashAction::Flashcard),
+        it("常用", Svg("presentation"), 0x8f959e, "演讲者备注", "", "notes speaker bz beizhu yanjiang yjzbz yanjiangzhebeizhu", SlashAction::Kind(Notes)),
         it("常用", Svg("sync"), 0x3b6cf6, "同步块", "", "sync tbk tongbu tongbukuai", SlashAction::Sync),
         it("常用", Svg("sigma"), 0x1f2329, "公式", "$$", "math formula gs gongshi latex tex shuxue", SlashAction::Math),
         it("常用", Svg("template"), 0xec4899, "模板", "", "template mb muban", SlashAction::Template),
@@ -113,9 +119,12 @@ pub fn slash_items() -> Vec<SlashItem> {
             SlashAction::Embed("base:grid"),
         ),
         it("多维表格", Svg("v-kanban"), 0x2ea121, "看板", "", "kanban kb kanban board renwu", SlashAction::Embed("base:kanban")),
+        it("多维表格", Svg("square-check"), 0x3b6cf6, "任务看板", "", "task kanban rwkb renwu renwukanban todo daiban", SlashAction::Embed("base:tasks")),
+        it("多维表格", Svg("calendar"), 0xff8800, "日程", "", "schedule calendar rc richeng rili riqi", SlashAction::Embed("base:schedule")),
         it("多维表格", Svg("gantt"), 0xf14c9d, "甘特图", "", "gantt gtt gante gantetu xiangmu", SlashAction::Embed("base:gantt")),
         it("多维表格", Svg("v-gallery"), 0x7f3bf5, "画册", "", "gallery hc huace album tupian", SlashAction::Embed("base:gallery")),
         it("多维表格", Svg("base"), 0x7f3bf5, "关联已有多维表格", "", "base link glyy guanlian yiyou duoweibiaoge", SlashAction::Embed("base:link")),
+        it("绘图", Svg("download"), 0xf08c00, "导入 draw.io", "", "drawio draw.io diagrams dr daoru import mxgraph", SlashAction::Drawio),
         it("绘图", Svg("pen-tool"), 0x2ea121, "画板", "", "board whiteboard hb huaban draw", SlashAction::Embed("board")),
         it("绘图", Svg("mindmap"), 0x0ea5e9, "思维导图", "", "mindmap swdt siwei naotu siweidaotu", SlashAction::Embed("mindmap")),
         it("绘图", Svg("workflow"), 0xf5a339, "流程图", "", "flow lct liucheng flowchart liuchengtu", SlashAction::Embed("flow")),
@@ -474,6 +483,22 @@ impl Editor {
                 self.pick_files(window, cx);
                 return;
             }
+            SlashAction::Flashcard => {
+                let at = insert_new(self, Editor::flashcard_block(RichText::default(), RichText::default()));
+                self.head = Pos::new(at, 0, 0);
+            }
+            SlashAction::Drawio => {
+                self.anchor = self.head;
+                self.changed(cx);
+                self.pick_drawio(cx);
+                return;
+            }
+            SlashAction::Pdf => {
+                self.anchor = self.head;
+                self.changed(cx);
+                self.pick_pdf(cx);
+                return;
+            }
             SlashAction::Link => {
                 self.anchor = self.head;
                 self.changed(cx);
@@ -535,13 +560,15 @@ impl Editor {
             }
             SlashAction::Embed(kind) if kind.starts_with("base:") => {
                 use crate::base::ViewKind;
-                let vk = match &kind[5..] {
-                    "kanban" => ViewKind::Kanban,
-                    "gallery" => ViewKind::Gallery,
-                    "gantt" => ViewKind::Gantt,
-                    _ => ViewKind::Grid,
+                let id = match &kind[5..] {
+                    p @ ("tasks" | "schedule") => crate::objects::create_base_preset(p),
+                    k => crate::objects::create_base(match k {
+                        "kanban" => ViewKind::Kanban,
+                        "gallery" => ViewKind::Gallery,
+                        "gantt" => ViewKind::Gantt,
+                        _ => ViewKind::Grid,
+                    }),
                 };
-                let id = crate::objects::create_base(vk);
                 let at = insert_new(self, Block::new(BlockKind::Embed { kind: "base".into(), id: id.clone() }, RichText::default()));
                 self.head = Pos::new(at, 0, 0);
                 self.anchor = self.head;
@@ -927,7 +954,7 @@ impl Editor {
                 b.text = RichText::default();
                 self.head = Pos::new(h.block, 0, 0);
             }
-            BlockKind::Quote | BlockKind::Callout { .. } => {
+            BlockKind::Quote | BlockKind::Callout { .. } | BlockKind::Notes => {
                 let t = &blk.text;
                 if t.is_empty() {
                     self.block_mut(h.block).kind = BlockKind::Text;
@@ -979,7 +1006,14 @@ impl Editor {
                 };
                 let mut nb = Block::new(kind, tail);
                 nb.indent = blk.indent;
-                insert_after(self, nb);
+                if blk.collapsed && !matches!(blk.kind, BlockKind::Heading { .. }) {
+                    // 收起的项：新的同级项接在整棵子树后面（Workflowy 的行为）
+                    let at = super::fold::subtree(&self.content.blocks, h.block).end;
+                    self.insert_blocks(at, vec![nb]);
+                    self.head = Pos::new(at, 0, 0);
+                } else {
+                    insert_after(self, nb);
+                }
             }
         }
         self.anchor = self.head;
@@ -1895,8 +1929,13 @@ impl Editor {
         let (s, e) = self.sel();
         let whole_slot = s == Pos::new(slot.0, slot.1, 0) && e == Pos::new(slot.0, slot.1, len);
         if whole_slot || s.slot() != e.slot() || len == 0 {
-            let last = self.content.blocks.len() - 1;
-            self.anchor = Pos::new(0, 0, 0);
+            // 聚焦时只选聚焦的子树；终点落在最后一个可见块上（折叠的子项随父项一起被选中）
+            let (first, end) = match self.focus_ix() {
+                Some(r) => (r, super::fold::subtree(&self.content.blocks, r).end.max(r + 1)),
+                None => (0, self.content.blocks.len()),
+            };
+            let last = self.visible_from(end - 1, false).filter(|l| *l >= first).unwrap_or(first);
+            self.anchor = Pos::new(first, 0, 0);
             self.head = self.slot_end(last);
         } else {
             self.anchor = Pos::new(slot.0, slot.1, 0);
@@ -1956,6 +1995,8 @@ impl Editor {
         } else if self.has_selection() {
             self.anchor = self.head;
             cx.notify();
+        } else {
+            self.exit_focus(cx);
         }
     }
 

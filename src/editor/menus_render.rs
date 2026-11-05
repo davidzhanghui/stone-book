@@ -19,6 +19,7 @@ impl Editor {
             ("❝", BlockKind::Quote),
             ("</>", BlockKind::Code { lang: "Plain Text".into() }),
             ("💡", BlockKind::Callout { emoji: "💡".into(), color: 5 }),
+            ("✎", BlockKind::Notes),
         ];
         let textual = kind.is_textual();
         let cur_indent = self.content.blocks.get(ix).map(|b| b.indent).unwrap_or(0);
@@ -102,6 +103,28 @@ impl Editor {
                 this.copy_block_at(ix, cx);
             })))
             .child(item("bm-dup", "copy", "创建副本", "⌘D", false).on_click(cx.listener(move |this, _, _, cx| this.duplicate_block_at(ix, cx))))
+            .when(self.has_children(ix), |d| {
+                let collapsed = self.content.blocks.get(ix).is_some_and(|b| b.collapsed);
+                d.child(
+                    item("bm-fold", if collapsed { "chevron-right" } else { "chevron-down" }, if collapsed { "展开子项" } else { "折叠子项" }, "⌘.", false)
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.pop.block_menu = None;
+                            this.toggle_fold_at(ix, cx);
+                        })),
+                )
+            })
+            .when(textual && ix > 0, |d| {
+                d.child(item("bm-card", "book", "转为闪卡", "", false).on_click(cx.listener(move |this, _, _, cx| {
+                    this.pop.block_menu = None;
+                    this.convert_to_flashcard(ix, cx);
+                })))
+            })
+            .child(item("bm-focus", "focus", if self.focus_ix() == Some(ix) { "退出聚焦" } else { "聚焦此项" }, "⌥⌘.", false).on_click(cx.listener(
+                move |this, _, _, cx| {
+                    this.pop.block_menu = None;
+                    this.focus_on(ix, cx);
+                },
+            )))
             .when(self.content.blocks.get(ix).is_some_and(|b| b.sync.is_some()), |d| {
                 d.child(item("bm-unsync", "link", "取消同步", "", false).on_click(cx.listener(move |this, _, _, cx| this.unsync_at(ix, cx))))
             })

@@ -532,7 +532,7 @@ fn emit(blocks: &[&Block], depth: usize, out: &mut String) {
             BlockKind::Title | BlockKind::Text => open_close("p", align_attr(b.align), out),
             BlockKind::Heading { level } => open_close(&format!("h{level}"), align_attr(b.align), out),
             BlockKind::Todo { checked } => open_close("checkbox", &format!(" done=\"{checked}\""), out),
-            BlockKind::Quote => {
+            BlockKind::Quote | BlockKind::Notes => {
                 let _ = writeln!(out, "{pad}<blockquote>");
                 paragraphs(&b.text, &format!("{pad}  "), out);
                 let _ = writeln!(out, "{pad}</blockquote>");

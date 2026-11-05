@@ -216,7 +216,7 @@ fn rewrite_paths(db: &Path, old: &str, new: &str) -> Result<()> {
         "UPDATE base_views SET data = replace(data, ?1, ?2) WHERE instr(data, ?1) > 0",
         "UPDATE link_cards SET image = replace(image, ?1, ?2), favicon = replace(favicon, ?1, ?2) WHERE instr(image, ?1) > 0 OR instr(favicon, ?1) > 0",
         "UPDATE objects SET data = CAST(replace(CAST(data AS TEXT), ?1, ?2) AS BLOB)
-         WHERE kind IN ('board', 'flow', 'mindmap', 'base') AND instr(CAST(data AS TEXT), ?1) > 0",
+         WHERE kind IN ('board', 'flow', 'mindmap', 'base', 'pdfdoc') AND instr(CAST(data AS TEXT), ?1) > 0",
     ] {
         tx.execute(sql, p)?;
     }

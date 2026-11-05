@@ -11,6 +11,7 @@ mod convert;
 mod diagram;
 mod docxml;
 mod editor;
+mod flashcard;
 mod highlight;
 mod i18n;
 mod katex_assets;
@@ -22,6 +23,7 @@ mod model;
 #[cfg(test)]
 mod model_fixture_tests;
 mod objects;
+mod pdfdoc;
 mod seed;
 mod settings;
 mod sheet;
@@ -122,6 +124,9 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("cmd-g", FindNext, e),
         KeyBinding::new("cmd-shift-g", FindPrev, e),
         KeyBinding::new("ctrl-cmd-space", ShowCharacterPalette, e),
+        KeyBinding::new("cmd-alt-t", InsertTimestamp, e),
+        KeyBinding::new("cmd-.", ToggleFold, e),
+        KeyBinding::new("cmd-alt-.", FocusBlock, e),
         // 全局
         KeyBinding::new("cmd-n", NewDoc, None),
         KeyBinding::new("cmd-shift-n", NewSubDoc, None),
@@ -129,6 +134,7 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("cmd-,", OpenSettings, None),
         KeyBinding::new("cmd-shift-p", CommandPalette, None),
         KeyBinding::new("f5", Present, None),
+        KeyBinding::new("cmd-shift-r", ReviewCards, None),
         KeyBinding::new("cmd-\\", ToggleSidebar, None),
         KeyBinding::new("cmd-shift-o", ToggleOutline, None),
         KeyBinding::new("cmd-shift-f", FocusMode, None),

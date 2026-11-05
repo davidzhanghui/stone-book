@@ -77,7 +77,7 @@ pub(crate) fn file_view_el<V: FileViewHost>(
         let player = video_player(mid, path, name, vw * k, vh * k, &PlayerOpts::default(), t, window);
         div().size_full().flex().items_center().justify_center().child(player).into_any_element()
     } else if exists && kind == Preview::Audio {
-        let player = audio_player(mid, path, name, area_w.min(640.), false, None, t, cx);
+        let player = audio_player(mid, path, name, area_w.min(640.), false, None, None, t, cx);
         div().size_full().flex().items_center().justify_center().child(player).into_any_element()
     } else if let Some(src) = live {
         canvas(|_, _, _| (), move |b, _, window, _| crate::webview::show_live(window, mid, &src, b)).size_full().into_any_element()

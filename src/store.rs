@@ -307,6 +307,73 @@ impl Store {
         })
     }
 
+    /// 未链接的提及：正文里出现了 `title`、却没有链接到 `id` 的文档：(ID, 标题)。标题少于 2 个字不查（噪声太多）。
+    pub fn unlinked_mentions(&self, id: &str, title: &str) -> Vec<(String, String)> {
+        let title = title.trim();
+        if title.chars().count() < 2 || id.is_empty() || id.contains(['%', '_']) {
+            return vec![];
+        }
+        let link = format!("{}{id}", crate::editor::DOC_LINK_PREFIX);
+        self.rows(
+            "SELECT id, title FROM docs WHERE deleted = 0 AND id != ?1 AND instr(plain, ?2) > 0 AND instr(content, ?3) = 0 ORDER BY updated DESC LIMIT 30",
+            params![id, title, link],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+    }
+
+    /// 把文档 `doc` 里第一处未加链接的 `title` 改成指向 `target` 的文档链接。返回是否改动。
+    pub fn link_mention(&self, doc: &str, target: &str, title: &str) -> bool {
+        self.flush();
+        let Some((mut content, None)) = self.load(doc) else { return false };
+        let url = format!("{}{target}", crate::editor::DOC_LINK_PREFIX);
+        for b in content.blocks.iter_mut().skip(1) {
+            let n = b.slot_count();
+            for c in 0..n {
+                let Some(t) = b.slot(c) else { continue };
+                if b.kind.is_source() || matches!(b.kind, crate::model::BlockKind::Code { .. }) {
+                    break;
+                }
+                let hit =
+                    t.text.match_indices(title).map(|(i, _)| i).find(|&i| !t.runs().any(|(r, m)| m.link.is_some() && r.start < i + title.len() && i < r.end));
+                if let Some(i) = hit {
+                    let blk = std::sync::Arc::make_mut(b);
+                    if let Some(t) = blk.slot_mut(c) {
+                        t.update_marks(i..i + title.len(), |m| m.link = Some(url.clone()));
+                    }
+                    self.save(doc, &content);
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// 文档之间的链接（图谱用）：(源, 目标)，不含回收站里的文档。
+    pub fn link_edges(&self) -> Vec<(String, String)> {
+        self.flush();
+        let re = regex::Regex::new(&format!("{}([0-9A-Za-z-]+)", regex::escape(crate::editor::DOC_LINK_PREFIX))).expect("regex");
+        let docs: Vec<(String, String)> = self.rows("SELECT id, content FROM docs WHERE deleted = 0", [], |r| Ok((r.get(0)?, r.get(1)?)));
+        let mut out = vec![];
+        for (id, content) in docs {
+            let mut seen = std::collections::HashSet::new();
+            for cap in re.captures_iter(&content) {
+                let to = cap[1].to_string();
+                if to != id && seen.insert(to.clone()) {
+                    out.push((id.clone(), to));
+                }
+            }
+        }
+        out
+    }
+
+    /// 含闪卡的文档（不含回收站）：(ID, 标题, 正文 JSON)。先 flush，保证读到刚保存的内容。
+    pub fn flashcard_docs(&self) -> Vec<(String, String, String)> {
+        self.flush();
+        self.rows("SELECT id, title, content FROM docs WHERE deleted = 0 AND instr(content, '\"type\":\"flashcard\"') > 0", [], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        })
+    }
+
     pub fn list(&self) -> Vec<DocMeta> {
         self.rows("SELECT id, parent, title, updated, deleted FROM docs ORDER BY sort, created", [], |r| {
             Ok(DocMeta { id: r.get(0)?, parent: r.get(1)?, title: r.get(2)?, updated: r.get(3)?, deleted: r.get::<_, i64>(4)? != 0 })
@@ -682,6 +749,36 @@ mod tests {
         assert_eq!(s.backlinks(&target), vec![(a.clone(), "引用者甲".to_string())]);
         assert!(s.backlinks(&a).is_empty());
         assert!(s.backlinks("%").is_empty(), "LIKE 通配符不能当成 ID");
+        std::env::remove_var(DATA_DIR_ENV);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn unlinked_mentions_and_link_them() {
+        use crate::model::{Block, BlockKind, RichText};
+        let _env = TEST_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = std::env::temp_dir().join(format!("stonebrook-mentions-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::set_var(DATA_DIR_ENV, &dir);
+        let s = Store::open().unwrap();
+        let target = s.create(None, &DocContent::new_empty("石渠计划"));
+        let doc = |title: &str, body: &str| {
+            DocContent::from_blocks(vec![Block::new(BlockKind::Title, RichText::plain(title)), Block::new(BlockKind::Text, RichText::plain(body))])
+        };
+        let a = s.create(None, &doc("周报", "本周推进石渠计划，下周继续石渠计划"));
+        let _b = s.create(None, &doc("无关", "别的内容"));
+        s.flush();
+        assert_eq!(s.unlinked_mentions(&target, "石渠计划"), vec![(a.clone(), "周报".to_string())]);
+        assert!(s.unlinked_mentions(&target, "石").is_empty(), "单字标题不查");
+        assert!(s.link_mention(&a, &target, "石渠计划"));
+        s.flush();
+        assert!(s.unlinked_mentions(&target, "石渠计划").is_empty(), "已链接就不再算未链接提及");
+        assert_eq!(s.backlinks(&target), vec![(a.clone(), "周报".to_string())]);
+        let (c, _) = s.load(&a).unwrap();
+        let runs: Vec<_> = c.blocks[1].text.runs().map(|(r, m)| (c.blocks[1].text.text[r].to_string(), m.link.is_some())).collect();
+        assert_eq!(runs[1], ("石渠计划".to_string(), true), "只链接第一处");
+        assert!(!runs.last().unwrap().1);
+        assert_eq!(s.link_edges(), vec![(a.clone(), target.clone())]);
         std::env::remove_var(DATA_DIR_ENV);
         let _ = std::fs::remove_dir_all(&dir);
     }

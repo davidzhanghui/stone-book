@@ -5,6 +5,7 @@
 //! - 本文件：与文本绘图互相转换（Mermaid ⇄ 流程图）、自动布局
 
 mod code;
+pub mod drawio;
 mod find;
 pub mod iconlib;
 pub mod icons;
@@ -19,6 +20,7 @@ mod table;
 mod templates;
 mod ui;
 pub mod view;
+pub mod wire;
 
 use crate::canvas::{rect, Arrow, EstimateMeasure, Item, ShapeKind};
 use crate::diagram::sugiyama::{self, Dir, LEdge, LNode, Spacing};

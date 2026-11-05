@@ -16,6 +16,8 @@ mod button;
 mod clip;
 mod countdown;
 mod fileview;
+mod flashcard;
+pub(crate) mod fold;
 mod imgview;
 mod input;
 mod links;
@@ -27,6 +29,7 @@ mod menus_render;
 mod nav;
 mod numbering;
 mod ops;
+mod pdf;
 mod reading;
 mod render;
 mod sync;
@@ -122,7 +125,10 @@ actions!(
         FindNext,
         FindPrev,
         ShowCharacterPalette,
-        InsertImage
+        InsertImage,
+        InsertTimestamp,
+        ToggleFold,
+        FocusBlock
     ]
 );
 
@@ -489,6 +495,10 @@ pub struct Editor {
     /// 正在编辑的行内公式 (块, 槽, 偏移)
     pub inline_math_at: Option<(usize, usize, usize)>,
     reveal_pending: std::cell::Cell<u8>,
+    /// 聚焦模式的根块 id（见 fold.rs）
+    pub focus_root: Option<u64>,
+    /// 隐藏块掩码缓存：((版本, 聚焦根), 掩码)
+    fold_cache: RefCell<Option<((u64, Option<u64>), Rc<Vec<bool>>)>>,
 }
 
 pub const MAX_INDENT: u8 = 8;
@@ -596,6 +606,8 @@ impl Editor {
             ro_doc: None,
             inline_math_at: None,
             reveal_pending: std::cell::Cell::new(0),
+            focus_root: None,
+            fold_cache: RefCell::new(None),
         }
     }
 
@@ -625,6 +637,7 @@ impl Editor {
         self.pop.link_edit = None;
         self.read_only = false;
         self.ro_doc = None;
+        self.focus_root = None;
         self.image_sel = None;
         self.image_drag = None;
         self.image_crop = None;
@@ -753,6 +766,7 @@ impl Editor {
     // ───────────── 修改原语 ─────────────
 
     pub fn block_mut(&mut self, i: usize) -> &mut Block {
+        self.fold_cache.get_mut().take();
         self.list.splice(i..i + 1, 1);
         Arc::make_mut(&mut self.content.blocks[i])
     }
@@ -763,6 +777,7 @@ impl Editor {
 
     pub fn insert_blocks(&mut self, at: usize, blocks: Vec<Block>) {
         let n = blocks.len();
+        self.fold_cache.get_mut().take();
         self.content.blocks.splice(at..at, blocks.into_iter().map(Arc::new));
         self.list.splice(at..at, n);
     }
@@ -772,6 +787,7 @@ impl Editor {
         if range.is_empty() {
             return;
         }
+        self.fold_cache.get_mut().take();
         self.content.blocks.drain(range.clone());
         self.list.splice(range, 0);
         if self.content.blocks.len() == 1 {
@@ -792,6 +808,7 @@ impl Editor {
         }
         self.list.splice(prefix..old.len() - suffix, new.len() - prefix - suffix);
         self.content.blocks = new;
+        self.fold_cache.get_mut().take();
     }
 
     /// 记录撤销点。连续输入 / 连续删除合并为一步。
@@ -848,6 +865,12 @@ impl Editor {
         }
         // 块被移动 / 删除后 `@` 菜单记的位置可能失效
         self.update_mention();
+        // 编辑把光标带进了折叠区域（如合并到被收起的上一块）：展开。
+        // 有些操作直接改块数组（移动块等），先丢掉掩码缓存
+        self.fold_cache.get_mut().take();
+        if self.reveal_block(self.head.block) {
+            self.list.reset(self.content.blocks.len());
+        }
         // 回到正文编辑：收起评论卡片（正在写评论时除外）
         if self.comment_input.is_none() {
             self.comment_open = None;
@@ -905,6 +928,12 @@ impl Editor {
             self.crop_commit(cx);
         }
         let p = self.snap_merge(self.clamp(p));
+        // 光标进入折叠 / 聚焦之外的区域：先展开
+        self.fold_cache.get_mut().take();
+        if self.reveal_block(p.block) {
+            self.list.reset(self.content.blocks.len());
+            self.schedule_save(cx);
+        }
         self.head = p;
         if !extend {
             self.anchor = p;
@@ -1132,6 +1161,9 @@ impl Editor {
         let n = f.matches.len() as i32;
         f.current = ((f.current as i32 + dir).rem_euclid(n)) as usize;
         let (p, len) = f.matches[f.current];
+        if self.reveal_block(p.block) {
+            self.list.reset(self.content.blocks.len());
+        }
         self.anchor = p;
         self.head = Pos { offset: p.offset + len, ..p };
         self.reveal_head();

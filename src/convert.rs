@@ -168,6 +168,15 @@ pub fn blocks_to_md(blocks: &[impl std::ops::Deref<Target = Block>]) -> String {
                     out.push_str(&format!("> {line}\n"));
                 }
             }
+            // 闪卡：问答两行引用；挖空保留 Anki 的 `{{c1::…}}` 写法，方便导入 Anki
+            BlockKind::Flashcard { back, .. } => {
+                out.push_str(&format!("> **问：** {}\n", text.replace('\n', "<br>")));
+                if !back.is_empty() {
+                    out.push_str(&format!(">\n> **答：** {}\n", rich_to_md(back).replace('\n', "<br>")));
+                }
+            }
+            // 演讲者备注：沿用 Marp 的 HTML 注释写法，渲染 Markdown 时不显示
+            BlockKind::Notes => out.push_str(&format!("<!-- 备注：{} -->\n", b.text.text.replace("-->", "—>"))),
             BlockKind::Callout { emoji, .. } => {
                 for (k, line) in text.split('\n').enumerate() {
                     if k == 0 {
@@ -365,6 +374,8 @@ pub fn blocks_to_html(blocks: &[impl std::ops::Deref<Target = Block>]) -> String
                 out.push_str(&format!("<p{a}>{t}</p>"))
             }
             BlockKind::Quote => out.push_str(&format!("<blockquote>{t}</blockquote>")),
+            // reveal.js 约定的备注写法；网页 / PDF 导出里不显示
+            BlockKind::Notes => out.push_str(&format!("<aside class=\"notes\" style=\"display:none\">{t}</aside>")),
             BlockKind::Callout { emoji, .. } => {
                 out.push_str(&format!("<blockquote style=\"background:#F0F4FF;border-left:4px solid #3B6CF6;padding:8px 12px\">{emoji} {t}</blockquote>"))
             }
@@ -480,6 +491,11 @@ pub fn blocks_to_html(blocks: &[impl std::ops::Deref<Target = Block>]) -> String
             }
             BlockKind::Video { path, .. } => out.push_str(&format!("<video controls style=\"max-width:100%\" src=\"file://{}\"></video>", html_escape(path))),
             BlockKind::Embed { kind, id } => out.push_str(&crate::objects::to_html(kind, id)),
+            BlockKind::Flashcard { back, .. } => out.push_str(&format!(
+                "<div class=\"flashcard\" style=\"border:1px solid #dee0e3;border-radius:8px;padding:8px 14px;margin:8px 0\"><p><b>问：</b>{}</p><p><b>答：</b>{}</p></div>",
+                rich_to_html(&b.text),
+                rich_to_html(back)
+            )),
             _ => {}
         }
         i += 1;

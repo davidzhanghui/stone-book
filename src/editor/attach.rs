@@ -796,6 +796,7 @@ impl Editor {
                 .child(icon(ic, 16., color))
         };
         let sep = || div().w(px(1.)).h(px(16.)).mx(px(3.)).bg(t.border);
+        let is_pdf = matches!(self.content.blocks.get(ix).map(|b| &b.kind), Some(BlockKind::File { name, .. }) if preview_kind(name) == Preview::Pdf);
         div()
             .id(("att-tb", id as usize))
             .flex()
@@ -837,6 +838,10 @@ impl Editor {
                     cx.reveal_path(Path::new(&path));
                 }
             })))
+            .when(is_pdf, |d| {
+                d.child(sep())
+                    .child(btn("att-pdf", "highlighter", "转为可批注 PDF", false).on_click(cx.listener(move |this, _, _, cx| this.convert_file_to_pdf(ix, cx))))
+            })
             .into_any_element()
     }
 

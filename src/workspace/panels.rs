@@ -1,7 +1,6 @@
 //! 工作区的几个全局面板：设置（⌘,）、命令面板（⇧⌘P）、演示模式（F5）、PDF 导出、写作统计。
 
 use super::*;
-use crate::canvas::paint::{paint_scene, View};
 use crate::line_input::{InputEvent, LineInput};
 use crate::model::Block;
 use chrono::{Datelike, Duration as CDuration, Local, NaiveDate};
@@ -17,6 +16,8 @@ const COMMANDS: &[(&str, &str, &str, CmdFn)] = &[
     ("另存为模板", "", "save template moban lingcun", |ws, _, cx| ws.save_as_template(cx)),
     ("快速打开 / 全文搜索", "⌘P", "open search sousuo dakai", |_, w, cx| w.dispatch_action(Box::new(QuickOpen), cx)),
     ("演示模式", "F5", "present slides yanshi huandeng ppt", |ws, w, cx| ws.present(&Present, w, cx)),
+    ("文档图谱", "", "graph tupu link network guanxi", |ws, w, cx| ws.open_graph(w, cx)),
+    ("复习闪卡", "⇧⌘R", "review flashcard fuxi shanka anki fsrs", |ws, w, cx| ws.review_cards(&ReviewCards, w, cx)),
     ("切换阅读 / 编辑模式", "⌥⌘R", "read only reading yuedu bianji zhidu", |_, w, cx| w.dispatch_action(Box::new(ToggleReadMode), cx)),
     ("以思维导图查看", "", "mindmap siwei daotu", |ws, w, cx| ws.open_doc_mindmap(w, cx)),
     ("导出为 PDF", "", "pdf export daochu", |ws, w, cx| ws.export_pdf(&ExportPdf, w, cx)),
@@ -45,6 +46,7 @@ fn command_hint(name: &str, default: &str, cx: &App) -> String {
         "新建子文档" => "stonebrook::NewSubDoc",
         "快速打开 / 全文搜索" => "stonebrook::QuickOpen",
         "演示模式" => "stonebrook::Present",
+        "复习闪卡" => "stonebrook::ReviewCards",
         "切换阅读 / 编辑模式" => "stonebrook::ToggleReadMode",
         "导出为 Markdown" => "stonebrook::ExportMarkdown",
         "导入 Markdown…" => "stonebrook::ImportMarkdown",
@@ -74,48 +76,6 @@ fn cmd_matches(q: &str) -> Vec<usize> {
         })
         .map(|(i, _)| i)
         .collect()
-}
-
-/// 演示模式的一页：标题 + 内容块
-pub struct Slide {
-    title: String,
-    blocks: Vec<Arc<Block>>,
-    cover: bool,
-}
-
-fn build_slides(content: &DocContent) -> Vec<Slide> {
-    let mut slides = vec![Slide { title: content.title(), blocks: vec![], cover: true }];
-    let mut cur: Option<Slide> = None;
-    for b in content.blocks.iter().skip(1) {
-        match b.kind {
-            BlockKind::Heading { level } if level <= 2 => {
-                if let Some(s) = cur.take() {
-                    slides.push(s);
-                }
-                cur = Some(Slide { title: b.text.text.clone(), blocks: vec![], cover: false });
-            }
-            _ => {
-                let s = cur.get_or_insert_with(|| Slide { title: String::new(), blocks: vec![], cover: false });
-                // 没有标题分隔的长文：每 10 块一页
-                if s.blocks.len() >= 10 && s.title.is_empty() {
-                    let full = cur.take().unwrap();
-                    slides.push(full);
-                    cur = Some(Slide { title: String::new(), blocks: vec![b.clone()], cover: false });
-                } else if !(matches!(b.kind, BlockKind::Text) && b.text.is_empty()) {
-                    s.blocks.push(b.clone());
-                }
-            }
-        }
-    }
-    if let Some(s) = cur {
-        slides.push(s);
-    }
-    // 封面页用文档开头（第一个标题前）的文字做副标题
-    if slides.len() > 1 && slides[1].title.is_empty() && slides[1].blocks.len() <= 2 {
-        let intro = slides.remove(1);
-        slides[0].blocks = intro.blocks;
-    }
-    slides
 }
 
 impl Workspace {
@@ -753,188 +713,6 @@ impl Workspace {
             eprintln!("pdf export: {ok}");
         })
         .detach();
-    }
-
-    // ───────────── 演示模式 ─────────────
-
-    pub fn present(&mut self, _: &Present, window: &mut Window, cx: &mut Context<Self>) {
-        self.editor.update(cx, |e, cx| e.save_now(cx));
-        let slides = build_slides(&self.editor.read(cx).content);
-        self.slides = Some((slides, 0));
-        window.focus(&self.present_focus);
-        if !window.is_fullscreen() {
-            window.toggle_fullscreen();
-            self.present_fullscreen = true;
-        }
-        cx.notify();
-    }
-
-    fn exit_present(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.slides = None;
-        if self.present_fullscreen && window.is_fullscreen() {
-            window.toggle_fullscreen();
-        }
-        self.present_fullscreen = false;
-        window.focus(&self.editor.focus_handle(cx));
-        cx.notify();
-    }
-
-    pub fn slide_step(&mut self, d: i32, cx: &mut Context<Self>) {
-        if let Some((s, i)) = &mut self.slides {
-            *i = (*i as i32 + d).clamp(0, s.len() as i32 - 1) as usize;
-        }
-        cx.notify();
-    }
-
-    fn slide_block(b: &Block, t: &Theme, window: &mut Window) -> Option<AnyElement> {
-        let text = b.text.plain_with_math();
-        let indent = px(b.indent as f32 * 28.);
-        let line = |prefix: String, s: String, size: f32, col: Hsla| {
-            div()
-                .flex()
-                .flex_row()
-                .gap_3()
-                .pl(indent)
-                .text_size(px(size))
-                .line_height(px(size * 1.55))
-                .text_color(col)
-                .when(!prefix.is_empty(), |d| d.child(div().text_color(t.accent).child(prefix)))
-                .child(div().flex_1().child(s))
-                .into_any_element()
-        };
-        Some(match &b.kind {
-            BlockKind::Text => line(String::new(), text, 26., t.text),
-            BlockKind::Heading { .. } => div().pt_2().text_size(px(30.)).font_weight(FontWeight::SEMIBOLD).text_color(t.text).child(text).into_any_element(),
-            BlockKind::Bullet => line("•".into(), text, 26., t.text),
-            BlockKind::Ordered => line("›".into(), text, 26., t.text),
-            BlockKind::Todo { checked } => line(if *checked { "☑".into() } else { "☐".into() }, text, 26., if *checked { t.text_muted } else { t.text }),
-            BlockKind::Quote | BlockKind::Callout { .. } => div()
-                .pl_5()
-                .border_l_4()
-                .border_color(t.accent)
-                .text_size(px(24.))
-                .line_height(px(38.))
-                .text_color(t.text_secondary)
-                .child(text)
-                .into_any_element(),
-            BlockKind::Code { .. } => div()
-                .p_4()
-                .rounded(px(10.))
-                .bg(t.code_bg)
-                .font_family("Menlo")
-                .text_size(px(18.))
-                .line_height(px(28.))
-                .text_color(t.text)
-                .whitespace_normal()
-                .child(text)
-                .into_any_element(),
-            BlockKind::Image { path, .. } => {
-                div().flex().justify_center().child(img(std::path::PathBuf::from(path)).max_h(px(460.)).max_w_full().rounded(px(8.))).into_any_element()
-            }
-            BlockKind::Math => {
-                let p = crate::math::cached_path(&b.text.text, true)?;
-                div().flex().justify_center().child(img(p).max_h(px(160.))).into_any_element()
-            }
-            BlockKind::Diagram { offsets, .. } => {
-                let mut m = crate::editor::GpuiMeasure { window };
-                let scene = Arc::new(crate::diagram::render(&b.text.text, t.dark, None, &mut m, offsets).ok()?);
-                let (w, h): (f32, f32) = (scene.width.max(1.), scene.height.max(1.));
-                let s = (1100. / w).min(440. / h).min(1.6);
-                div()
-                    .flex()
-                    .justify_center()
-                    .child(div().w(px(w * s)).h(px(h * s)).child(
-                        canvas(|b, _, _| b, move |b, _, window, cx| paint_scene(&scene, View { origin: b.origin, scale: s }, b, window, cx)).size_full(),
-                    ))
-                    .into_any_element()
-            }
-            BlockKind::Divider => div().h(px(2.)).my_2().bg(t.border).into_any_element(),
-            _ => return None,
-        })
-    }
-
-    pub(super) fn render_present(&self, window: &mut Window, cx: &mut Context<Self>) -> Option<impl IntoElement> {
-        let (slides, i) = self.slides.as_ref()?;
-        let t = if theme(cx).dark { theme(cx).clone() } else { Theme::dark() };
-        let slide = slides.get(*i)?;
-        let n = slides.len();
-        let body: Vec<AnyElement> = slide.blocks.iter().filter_map(|b| Self::slide_block(b, &t, window)).collect();
-        Some(
-            div()
-                .id("present")
-                .absolute()
-                .inset_0()
-                .occlude()
-                .track_focus(&self.present_focus)
-                .bg(t.bg)
-                .text_color(t.text)
-                .font_family("PingFang SC")
-                .flex()
-                .flex_col()
-                .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| match ev.keystroke.key.as_str() {
-                    "right" | "down" | "space" | "pagedown" | "enter" => this.slide_step(1, cx),
-                    "left" | "up" | "pageup" | "backspace" => this.slide_step(-1, cx),
-                    "home" => this.slide_step(-1000, cx),
-                    "end" => this.slide_step(1000, cx),
-                    "escape" | "f5" => this.exit_present(window, cx),
-                    _ => {}
-                }))
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(|this, ev: &MouseDownEvent, window, cx| {
-                        let w = window.viewport_size().width;
-                        this.slide_step(if ev.position.x < w / 4. { -1 } else { 1 }, cx);
-                    }),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .flex()
-                        .flex_col()
-                        .justify_center()
-                        .px(px(120.))
-                        .py(px(60.))
-                        .gap_4()
-                        .overflow_hidden()
-                        .when(slide.cover, |d| {
-                            d.items_center()
-                                .child(div().text_size(px(64.)).font_weight(FontWeight::BOLD).text_center().child(if slide.title.is_empty() {
-                                    "未命名文档".to_string()
-                                } else {
-                                    slide.title.clone()
-                                }))
-                                .child(div().w(px(80.)).h(px(4.)).rounded(px(2.)).bg(t.accent))
-                                .children(
-                                    slide
-                                        .blocks
-                                        .iter()
-                                        .map(|b| div().text_size(px(26.)).text_color(t.text_secondary).text_center().child(b.text.plain_with_math())),
-                                )
-                                .child(div().mt_4().text_size(px(16.)).text_color(t.text_muted).child(Local::now().format("%Y 年 %m 月 %d 日").to_string()))
-                        })
-                        .when(!slide.cover, |d| {
-                            d.when(!slide.title.is_empty(), |d| {
-                                d.child(div().text_size(px(46.)).font_weight(FontWeight::BOLD).child(slide.title.clone()))
-                                    .child(div().w(px(56.)).h(px(4.)).mb_4().rounded(px(2.)).bg(t.accent))
-                            })
-                            .children(body)
-                        }),
-                )
-                .child(
-                    div()
-                        .h(px(48.))
-                        .px(px(40.))
-                        .flex()
-                        .flex_row()
-                        .items_center()
-                        .justify_between()
-                        .text_size(px(13.))
-                        .text_color(t.text_muted)
-                        .child(crate::i18n::tr("← → 翻页 · Esc 退出"))
-                        .child(format!("{} / {}", i + 1, n)),
-                )
-                .child(div().h(px(3.)).w(relative((*i + 1) as f32 / n as f32)).bg(t.accent)),
-        )
     }
 }
 

@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 mod more;
 
-pub const CATEGORIES: [&str; 12] = ["全部", "流程图", "泳道图", "思维导图", "组织架构", "时间线", "图示", "矩阵", "分析", "架构图", "UML", "看板"];
+pub const CATEGORIES: [&str; 13] = ["全部", "流程图", "泳道图", "思维导图", "组织架构", "时间线", "图示", "矩阵", "分析", "架构图", "UML", "看板", "线框"];
 
 pub struct Template {
     pub name: &'static str,
@@ -25,6 +25,9 @@ pub struct Template {
 
 /// 顺序与分类按常见分类（精选在前）。
 pub const TEMPLATES: &[Template] = &[
+    Template { name: "登录页线框", desc: "手机端登录页灰盒", cat: 12, build: super::wire::login_page },
+    Template { name: "列表页线框", desc: "手机端搜索 + Tab + 列表", cat: 12, build: super::wire::list_page },
+    Template { name: "详情页线框", desc: "网页端商品 / 文章详情", cat: 12, build: super::wire::detail_page },
     Template { name: "时间线（新）", desc: "卡片交错排布的时间线", cat: 5, build: more::timeline_new },
     Template { name: "增长飞轮", desc: "环环相扣的增长循环", cat: 6, build: more::flywheel },
     Template { name: "雷达图", desc: "多维度能力对比", cat: 6, build: more::radar },

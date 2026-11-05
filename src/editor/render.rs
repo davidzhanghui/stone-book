@@ -16,7 +16,7 @@ pub fn content_w() -> f32 {
         760.
     }
 }
-const GUTTER: f32 = 64.;
+pub(super) const GUTTER: f32 = 64.;
 const INDENT_W: f32 = 26.;
 /// 供图片宽度计算复用。
 pub fn indent_w() -> f32 {
@@ -450,7 +450,14 @@ impl Editor {
         let Some(blk) = self.content.blocks.get(ix).cloned() else {
             return div().into_any_element();
         };
+        // 折叠 / 聚焦隐藏的块：零高度占位
+        if self.is_hidden(ix) {
+            return div().h(px(0.)).into_any_element();
+        }
         let t = theme(cx).clone();
+        if ix == 0 && self.focus_root.is_some() {
+            return self.render_focus_crumbs(&t, cx);
+        }
         let focused = self.is_focused(window);
         let number = self.ordered_numbers().get(ix).copied().unwrap_or(1);
         let indent_px = blk.indent as f32 * INDENT_W;
@@ -550,6 +557,38 @@ impl Editor {
                             .flex_1()
                             .min_w(px(0.))
                             .pl(px(13.))
+                            .child(self.render_slot(ix, 0, &blk.text, spec, focused, &t))
+                            .on_mouse_down(MouseButton::Left, self.slot_click(ix, 0, cx)),
+                    )
+                    .into_any_element()
+            }
+            BlockKind::Notes => {
+                let spec = SlotSpec { color: t.text_secondary, ..SlotSpec::body(&t) };
+                div()
+                    .flex()
+                    .flex_col()
+                    .w_full()
+                    .gap(px(2.))
+                    .px(px(14.))
+                    .py(px(8.))
+                    .rounded(px(8.))
+                    .border_1()
+                    .border_dashed()
+                    .border_color(t.border)
+                    .bg(t.code_bg.opacity(0.5))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(6.))
+                            .text_size(px(11.))
+                            .text_color(t.text_muted)
+                            .child(icon("presentation", 12., t.text_muted))
+                            .child(crate::i18n::tr("演讲者备注 · 演示时不显示")),
+                    )
+                    .child(
+                        div()
+                            .w_full()
                             .child(self.render_slot(ix, 0, &blk.text, spec, focused, &t))
                             .on_mouse_down(MouseButton::Left, self.slot_click(ix, 0, cx)),
                     )
@@ -671,6 +710,34 @@ impl Editor {
                 )
             });
 
+        let n_hidden = if blk.collapsed { crate::editor::fold::subtree(&self.content.blocks, ix).len() } else { 0 };
+        // 折叠三角：有子项的块悬停显示，收起时常显
+        let fold = (ix > 0 && !self.read_only && self.has_children(ix)).then(|| {
+            let collapsed = blk.collapsed;
+            div().absolute().left(px(GUTTER + indent_px - 50. - if is_table { 16. } else { 0. })).top(px(handle_top.max(0.))).child(
+                div()
+                    .id(("fold", blk.id as usize))
+                    .size(px(22.))
+                    .rounded(px(4.))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .cursor_pointer()
+                    .when(!collapsed, |d| d.invisible().group_hover("blk", |s| s.visible()))
+                    .hover(|s| s.bg(t.hover))
+                    .tooltip(move |_, cx| {
+                        cx.new(|_| Tooltip(if collapsed { format!("展开 {n_hidden} 项（⌘.）") } else { "折叠（⌘.）".to_string() }.into())).into()
+                    })
+                    .child(icon(if collapsed { "chevron-right" } else { "chevron-down" }, 14., if collapsed { t.accent } else { t.text_muted }))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _, _, cx| {
+                            cx.stop_propagation();
+                            this.toggle_fold_at(ix, cx);
+                        }),
+                    ),
+            )
+        });
         let drop_color = t.drop_line;
         // 同步块：左侧橙色竖条 + 淡底色，组首块显示标签
         let sync_info = blk.sync.as_ref().map(|id| {
@@ -746,6 +813,7 @@ impl Editor {
                     .pt(px(pt))
                     .pb(px(pb))
                     .when(ix > 0, |d| d.child(handle))
+                    .children(fold)
                     .child(block_recorder)
                     .when(cm_active, |d| {
                         d.child(div().absolute().left(px(GUTTER - 8.)).right(px(GUTTER - 8.)).top_0().bottom_0().rounded(px(6.)).bg(gpui::hsla(
@@ -1659,6 +1727,7 @@ impl Render for Editor {
             .on_action(cx.listener(Self::open_find))
             .on_action(cx.listener(Self::find_next))
             .on_action(cx.listener(Self::find_prev))
+            .on_action(cx.listener(Self::focus_block))
             // 阅读模式：只保留移动、选择、复制、查找；会改文档的动作不注册，按键直接落空
             .when(!self.read_only, |d| {
                 d.on_action(cx.listener(Self::backspace))
@@ -1695,6 +1764,8 @@ impl Render for Editor {
                     .on_action(cx.listener(Self::move_block_up))
                     .on_action(cx.listener(Self::move_block_down))
                     .on_action(cx.listener(Self::insert_image))
+                    .on_action(cx.listener(Self::insert_timestamp_action))
+                    .on_action(cx.listener(Self::toggle_fold))
             })
             .on_action(cx.listener(|_, _: &ShowCharacterPalette, window, _| window.show_character_palette()))
             .on_mouse_move(cx.listener(Self::root_mouse_move))

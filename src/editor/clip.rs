@@ -358,6 +358,14 @@ impl Editor {
 
     /// 拖入 / 粘贴本地文件：图片 → 图片块；Markdown / 文本 / 飞书 DocxXML → 解析后插入；视频与其他文件 → 附件块。
     pub fn insert_files(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+        // draw.io 文件导入成画板（.drawio / .dio，或内容是 mxfile 的 .xml）
+        let (drawio, paths): (Vec<PathBuf>, Vec<PathBuf>) = paths.into_iter().partition(|p| is_drawio_file(p));
+        if !drawio.is_empty() {
+            self.import_drawio(drawio, cx);
+        }
+        if paths.is_empty() {
+            return;
+        }
         // 能解析成 DocxXML 的 .xml 才当文档内容，其余 .xml 仍是附件
         let docxml = |p: &PathBuf| -> Option<Vec<Block>> {
             let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
@@ -410,6 +418,72 @@ fn reserve_asset(src: &std::path::Path, assets: &std::path::Path) -> Option<Stri
     let dir = assets.join(&crate::store::new_uuid()[..8]);
     std::fs::create_dir_all(&dir).ok()?;
     Some(dir.join(name).to_string_lossy().to_string())
+}
+
+fn is_drawio_file(p: &std::path::Path) -> bool {
+    let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+    match ext.as_str() {
+        "drawio" | "dio" => true,
+        "xml" => std::fs::read_to_string(p).is_ok_and(|s| crate::board::drawio::is_drawio(&s)),
+        _ => false,
+    }
+}
+
+impl Editor {
+    /// 斜杠「导入 draw.io」：选文件。
+    pub(super) fn pick_drawio(&mut self, cx: &mut Context<Self>) {
+        let rx =
+            cx.prompt_for_paths(PathPromptOptions { files: true, directories: false, multiple: true, prompt: Some("导入".into()), ..Default::default() });
+        cx.spawn(async move |this: WeakEntity<Editor>, cx: &mut AsyncApp| {
+            if let Ok(Ok(Some(paths))) = rx.await {
+                this.update(cx, |this, cx| this.import_drawio(paths, cx)).ok();
+            }
+        })
+        .detach();
+    }
+
+    /// draw.io 文件 → 每页一个画板插到光标后；多页时每页前加一行页名。
+    pub fn import_drawio(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+        let dark = crate::theme::theme(cx).dark;
+        let mut blocks = vec![];
+        let (mut simplified, mut errors) = (0, vec![]);
+        for p in paths {
+            let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+            let text = match std::fs::read_to_string(&p) {
+                Ok(t) => t,
+                Err(e) => {
+                    errors.push(format!("{name}：{e}"));
+                    continue;
+                }
+            };
+            match crate::board::drawio::import(&text, dark) {
+                Ok(pages) => {
+                    let multi = pages.len() > 1;
+                    for page in pages {
+                        simplified += page.simplified;
+                        if multi {
+                            blocks.push(Block::new(BlockKind::Heading { level: 3 }, RichText::plain(page.name)));
+                        }
+                        let id = crate::objects::create("board", Some(crate::objects::ObjData::Board(std::sync::Arc::new(page.doc))));
+                        blocks.push(Block::new(BlockKind::Embed { kind: "board".into(), id }, RichText::default()));
+                    }
+                }
+                Err(e) => errors.push(format!("{name}：{e}")),
+            }
+        }
+        if !blocks.is_empty() {
+            let n = blocks.iter().filter(|b| matches!(b.kind, BlockKind::Embed { .. })).count();
+            self.insert_blocks_after_cursor(blocks, cx);
+            let mut msg = format!("已导入 {n} 个 draw.io 画板，可双击编辑");
+            if simplified > 0 {
+                msg.push_str(&format!("（{simplified} 个不常见形状已简化为矩形）"));
+            }
+            cx.emit(EditorEvent::Toast(msg));
+        }
+        if !errors.is_empty() {
+            cx.emit(EditorEvent::Toast(format!("导入失败：{}", errors.join("；"))));
+        }
+    }
 }
 
 /// 把文件拷贝进 assets 目录（保留原文件名，避免重名加前缀）。

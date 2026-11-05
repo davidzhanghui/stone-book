@@ -1872,6 +1872,82 @@ impl Base {
         tid
     }
 
+    /// 预设模板（斜杠菜单「任务看板」「日程」）：字段和视图都配好的多维表格。
+    /// - `tasks`：标题 / 状态 / 截止日期 / 负责人；看板（按状态分列）+ 表格 + 日历（按截止日期）
+    /// - `schedule`：事项 / 日期 / 类型 / 备注；日历 + 表格
+    pub fn new_preset(id: &str, preset: &str) -> Base {
+        let mut b = Base::empty(id);
+        let opts = |f: &mut Field, names: &[&str], colors: &[u8]| {
+            for (n, c) in names.iter().zip(colors) {
+                f.ensure_opt(n);
+                if let Some(o) = f.prop.options.last_mut() {
+                    o.color = *c;
+                }
+            }
+        };
+        let (name, table, fields, views, rows): (&str, &str, Vec<Field>, Vec<ViewKind>, usize) = match preset {
+            "schedule" => {
+                let mut kind = Field::new("类型", FieldType::Select);
+                opts(&mut kind, &["会议", "里程碑", "提醒", "其他"], &[0, 3, 11, 7]);
+                (
+                    "日程",
+                    "日程",
+                    vec![Field::new("事项", FieldType::Text), Field::new("日期", FieldType::Date), kind, Field::new("备注", FieldType::Text)],
+                    vec![ViewKind::Calendar, ViewKind::Grid],
+                    0,
+                )
+            }
+            _ => {
+                let mut status = Field::new("状态", FieldType::Select);
+                opts(&mut status, &["待办", "进行中", "完成"], &[11, 0, 3]);
+                (
+                    "任务看板",
+                    "任务",
+                    vec![Field::new("标题", FieldType::Text), status, Field::new("截止日期", FieldType::Date), Field::new("负责人", FieldType::Person)],
+                    vec![ViewKind::Kanban, ViewKind::Grid, ViewKind::Calendar],
+                    3,
+                )
+            }
+        };
+        b.meta.name = name.into();
+        let mut meta = TableMeta { name: table.into(), ..Default::default() };
+        let tid = meta.id.clone();
+        let select = fields.iter().find(|f| f.kind == FieldType::Select).map(|f| f.id.clone());
+        let date = fields.iter().find(|f| f.kind == FieldType::Date).map(|f| f.id.clone());
+        let mut vs: Vec<View> = views.iter().map(|k| View::new(k.label(), *k)).collect();
+        for v in vs.iter_mut() {
+            match v.kind {
+                ViewKind::Kanban => v.group_field = select.clone(),
+                ViewKind::Calendar => {
+                    v.date_field = date.clone();
+                    v.color_field = select.clone();
+                }
+                _ => {}
+            }
+        }
+        meta.fields = fields.iter().map(|f| f.id.clone()).collect();
+        meta.views = vs.iter().map(|v| v.id.clone()).collect();
+        meta.active_view = vs[0].id.clone();
+        b.tables.insert(tid.clone(), Table::default());
+        b.put_table(meta);
+        for f in fields {
+            b.put_field(&tid, f);
+        }
+        for v in vs {
+            b.put_view(&tid, v);
+        }
+        for _ in 0..rows {
+            b.new_record(&tid, None);
+        }
+        let mut m = b.meta.clone();
+        m.tables.push(tid.clone());
+        m.active = tid;
+        b.set_meta(m);
+        b.pending.clear();
+        b.finish_order();
+        b
+    }
+
     /// 一个全新的多维表格（斜杠菜单「表格 / 看板 / 画册」）。
     pub fn new_default(id: &str, kind: ViewKind) -> Base {
         let mut b = Base::empty(id);
@@ -1915,6 +1991,27 @@ mod tests {
         let mut b = Base::new_default("t", ViewKind::Grid);
         b.persist = false;
         b
+    }
+
+    #[test]
+    fn presets_wire_views_to_fields() {
+        for (p, first) in [("tasks", ViewKind::Kanban), ("schedule", ViewKind::Calendar)] {
+            let mut b = Base::new_preset("t", p);
+            b.persist = false;
+            let t = b.table(&b.meta.active).unwrap();
+            assert_eq!(t.meta.fields.len(), 4);
+            let v = &t.views[&t.meta.active_view];
+            assert_eq!(v.kind, first);
+            let sel = t.meta.fields.iter().find(|f| t.fields[*f].kind == FieldType::Select).unwrap();
+            assert!(t.fields[sel].prop.options.len() >= 3);
+            for v in t.views.values() {
+                match v.kind {
+                    ViewKind::Kanban => assert_eq!(v.group_field.as_ref(), Some(sel)),
+                    ViewKind::Calendar => assert!(v.date_field.as_ref().is_some_and(|d| t.fields[d].kind == FieldType::Date)),
+                    _ => {}
+                }
+            }
+        }
     }
 
     #[test]

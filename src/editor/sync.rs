@@ -23,7 +23,15 @@ pub fn sync_groups(blocks: &[Arc<Block>]) -> Vec<(String, Range<usize>)> {
 
 /// 组内容序列化（不含块 id，便于比较是否变化）。
 fn group_json(blocks: &[Arc<Block>], r: &Range<usize>) -> String {
-    let v: Vec<Block> = blocks[r.clone()].iter().map(|b| (**b).clone()).collect();
+    // 折叠是各处自己的视图状态，不跟着同步
+    let v: Vec<Block> = blocks[r.clone()]
+        .iter()
+        .map(|b| {
+            let mut b = (**b).clone();
+            b.collapsed = false;
+            b
+        })
+        .collect();
     blocks_to_json(&v)
 }
 

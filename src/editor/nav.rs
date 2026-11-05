@@ -14,7 +14,7 @@ impl Editor {
         if p.cell + 1 < self.stops(p.block) {
             return Some(Pos::new(p.block, p.cell + 1, 0));
         }
-        (p.block + 1 < self.content.blocks.len()).then(|| Pos::new(p.block + 1, 0, 0))
+        self.visible_from(p.block + 1, true).map(|b| Pos::new(b, 0, 0))
     }
 
     fn prev_stop_end(&self, p: Pos) -> Option<Pos> {
@@ -22,7 +22,10 @@ impl Editor {
             let c = p.cell - 1;
             return Some(Pos::new(p.block, c, self.slot_len((p.block, c))));
         }
-        (p.block > 0).then(|| self.slot_end(p.block - 1))
+        if p.block == 0 {
+            return None;
+        }
+        self.visible_from(p.block - 1, false).map(|b| self.slot_end(b))
     }
 
     fn right_pos(&self) -> Pos {
@@ -145,9 +148,9 @@ impl Editor {
             }
         }
         if down {
-            (p.block + 1 < self.content.blocks.len()).then(|| (p.block + 1, 0))
+            self.visible_from(p.block + 1, true).map(|b| (b, 0))
         } else if p.block > 0 {
-            let prev = p.block - 1;
+            let prev = self.visible_from(p.block - 1, false)?;
             // 从下方进入表格时落在最后一行的同一列
             let cell = match self.content.blocks[prev].kind {
                 BlockKind::Table { rows, cols, .. } => (rows - 1) * cols,
@@ -421,6 +424,20 @@ impl Editor {
         }
         let ix = map.as_ref().map_or(raw, |m| m.d2m(raw));
         let p = self.clamp(Pos::new(b, c, ix));
+        // 音频时间戳：单击即跳转播放
+        if ev.click_count == 1 && !ev.modifiers.shift {
+            let url = self.slot_text((b, c)).and_then(|t| t.runs().find(|(r, _)| r.start <= p.offset && p.offset < r.end).and_then(|(_, m)| m.link.clone()));
+            if let Some((secs, name)) = url.as_deref().and_then(super::links::seek_link_target) {
+                let name = name.to_string();
+                self.seek_to_stamp(secs, &name, cx);
+                return;
+            }
+            // PDF 摘录的回跳链接：单击打开阅读器并定位
+            if let Some(u) = url.filter(|u| u.starts_with(crate::pdfdoc::PDF_LINK_PREFIX)) {
+                self.open_link(&u, cx);
+                return;
+            }
+        }
         // ⌘ + 点击打开链接
         if ev.modifiers.platform {
             let url = self.slot_text((b, c)).and_then(|t| t.runs().find(|(r, _)| r.start <= p.offset && p.offset < r.end).and_then(|(_, m)| m.link.clone()));

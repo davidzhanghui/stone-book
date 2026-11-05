@@ -20,6 +20,33 @@ pub fn doc_link(id: &str) -> String {
     format!("{DOC_LINK_PREFIX}{id}")
 }
 
+/// 音频时间戳链接：`stonebrook://seek/<秒>?<音频文件名>`。块 id 不落盘，所以用资源文件名定位音频块。
+pub const SEEK_LINK_PREFIX: &str = "stonebrook://seek/";
+
+pub fn seek_link(secs: f64, file: &str) -> String {
+    let name = std::path::Path::new(file).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    format!("{SEEK_LINK_PREFIX}{:.1}?{name}", secs.max(0.))
+}
+
+/// 解析时间戳链接：(秒, 音频文件名)。
+pub fn seek_link_target(url: &str) -> Option<(f64, &str)> {
+    let rest = url.strip_prefix(SEEK_LINK_PREFIX)?;
+    let (t, name) = rest.split_once('?')?;
+    let t: f64 = t.parse().ok().filter(|t: &f64| t.is_finite() && *t >= 0.)?;
+    (!name.is_empty()).then_some((t, name))
+}
+
+/// 时间戳显示文字：`▶ 1:02:03` / `▶ 12:34`。
+pub fn stamp_label(secs: f64) -> String {
+    let s = secs.max(0.) as u64;
+    let (h, m, s) = (s / 3600, s / 60 % 60, s % 60);
+    if h > 0 {
+        format!("▶ {h}:{m:02}:{s:02}")
+    } else {
+        format!("▶ {m}:{s:02}")
+    }
+}
+
 /// `@` 文档选择菜单。
 pub struct MentionMenu {
     pub block: usize,
@@ -124,10 +151,125 @@ impl Editor {
 
     /// ⌘ + 点击链接：文档链接在应用内打开，其他链接交给系统。
     pub(super) fn open_link(&mut self, url: &str, cx: &mut Context<Self>) {
+        if let Some((secs, name)) = seek_link_target(url) {
+            let name = name.to_string();
+            self.seek_to_stamp(secs, &name, cx);
+            return;
+        }
+        if let Some(rest) = url.strip_prefix(crate::pdfdoc::PDF_LINK_PREFIX) {
+            cx.emit(EditorEvent::OpenEmbed { kind: "pdfdoc".into(), id: rest.to_string() });
+            return;
+        }
         match doc_link_target(url) {
             Some(id) => cx.emit(EditorEvent::OpenDoc(id.to_string())),
             None => cx.open_url(url),
         }
+    }
+
+    /// 本文档里文件名为 `name` 的音频块：(块序号, 块 id, 文件路径)。
+    fn audio_block(&self, name: &str) -> Option<(usize, u64, String)> {
+        self.content.blocks.iter().enumerate().find_map(|(i, b)| match &b.kind {
+            BlockKind::File { path, .. } | BlockKind::Video { path, .. }
+                if std::path::Path::new(path).file_name().is_some_and(|n| n.to_string_lossy() == name) =>
+            {
+                Some((i, b.id, path.clone()))
+            }
+            _ => None,
+        })
+    }
+
+    /// 点击时间戳：滚到音频块、跳到该时刻并播放。
+    pub(super) fn seek_to_stamp(&mut self, secs: f64, name: &str, cx: &mut Context<Self>) {
+        let Some((ix, id, path)) = self.audio_block(name) else {
+            cx.emit(EditorEvent::Toast("这段音频已不在本文档中".into()));
+            return;
+        };
+        let Some(play) = super::audio::play_path(&path, cx) else {
+            cx.emit(EditorEvent::Toast("音频还在解析，请稍后再试".into()));
+            return;
+        };
+        crate::media::pause_others(id);
+        crate::media::with(id, &play, |pl| {
+            pl.seek(secs);
+            if !pl.playing {
+                pl.play();
+            }
+        });
+        self.list.scroll_to(ListOffset { item_ix: ix, offset_in_item: px(0.) });
+        cx.notify();
+    }
+
+    /// 正在播放（或最近暂停）的音频块：(文件路径, 当前位置)。
+    fn active_audio(&self, cx: &mut App) -> Option<(String, f64)> {
+        let mut best: Option<(String, f64, bool)> = None;
+        for b in &self.content.blocks {
+            let path = match &b.kind {
+                BlockKind::File { path, name, .. } if super::attach::preview_kind(name) == super::attach::Preview::Audio => path,
+                _ => continue,
+            };
+            if !crate::media::exists(b.id) {
+                continue;
+            }
+            let Some(play) = super::audio::play_path(path, cx) else { continue };
+            let (playing, pos) = crate::media::with(b.id, &play, |pl| (pl.playing, pl.position())).unwrap_or((false, 0.));
+            if best.as_ref().is_none_or(|(_, _, p)| playing && !*p) {
+                best = Some((path.clone(), pos, playing));
+            }
+        }
+        best.map(|(p, t, _)| (p, t))
+    }
+
+    /// ⌥⌘T：给正在播放的音频插入时间戳。
+    pub fn insert_timestamp_action(&mut self, _: &super::InsertTimestamp, _: &mut Window, cx: &mut Context<Self>) {
+        match self.active_audio(cx) {
+            Some((path, secs)) => self.insert_timestamp(&path, secs, cx),
+            None => cx.emit(EditorEvent::Toast("先播放文档里的一段音频".into())),
+        }
+    }
+
+    /// 在光标处插入音频时间戳链接；光标不在可写文字的位置时，在音频块后新起一段。
+    pub fn insert_timestamp(&mut self, file: &str, secs: f64, cx: &mut Context<Self>) {
+        if self.read_only {
+            return;
+        }
+        let label = stamp_label(secs);
+        let link = Marks { link: Some(seek_link(secs, file)), ..Default::default() };
+        let h = self.head;
+        let writable = self
+            .content
+            .blocks
+            .get(h.block)
+            .is_some_and(|b| h.block > 0 && !b.kind.is_void() && !b.kind.is_source() && !matches!(b.kind, BlockKind::Code { .. }));
+        self.checkpoint(EditKind::Other);
+        if writable {
+            if self.has_selection() {
+                self.delete_selection_inner();
+            }
+            let h = self.head;
+            let before = self.slot_text(h.slot()).and_then(|t| t.text[..h.offset].chars().next_back());
+            let mut at = h.offset;
+            let slot = self.slot_mut(h.slot());
+            if before.is_some_and(|c| !c.is_whitespace()) {
+                slot.insert(at, " ", Marks::default());
+                at += 1;
+            }
+            slot.insert(at, &label, link);
+            slot.insert(at + label.len(), " ", Marks::default());
+            self.head = Pos::new(h.block, h.cell, at + label.len() + 1);
+        } else {
+            let name = std::path::Path::new(file).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+            let at = self.audio_block(&name).map_or(h.block + 1, |(i, _, _)| i + 1).min(self.content.blocks.len());
+            let mut text = crate::model::RichText::default();
+            text.insert(0, &label, link);
+            text.insert(label.len(), " ", Marks::default());
+            let n = text.len();
+            self.insert_blocks(at, vec![crate::model::Block::new(BlockKind::Text, text)]);
+            self.head = Pos::new(at, 0, n);
+        }
+        self.anchor = self.head;
+        self.pending_marks = None;
+        self.reveal_head();
+        self.changed(cx);
     }
 
     pub(super) fn render_mention(&self, at: Point<Pixels>, t: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
@@ -181,7 +323,18 @@ impl Editor {
 
 #[cfg(test)]
 mod tests {
-    use super::{doc_link, doc_link_target, DOC_LINK_PREFIX};
+    use super::{doc_link, doc_link_target, seek_link, seek_link_target, stamp_label, DOC_LINK_PREFIX};
+
+    #[test]
+    fn seek_links_round_trip() {
+        let url = seek_link(754.26, "/Users/x/Stonebrook/assets/ab12.m4a");
+        assert_eq!(url, "stonebrook://seek/754.3?ab12.m4a");
+        assert_eq!(seek_link_target(&url), Some((754.3, "ab12.m4a")));
+        assert_eq!(seek_link_target("stonebrook://seek/abc?x.m4a"), None);
+        assert_eq!(seek_link_target("stonebrook://seek/12?"), None);
+        assert_eq!(stamp_label(754.9), "▶ 12:34");
+        assert_eq!(stamp_label(3723.), "▶ 1:02:03");
+    }
 
     #[test]
     fn doc_links_round_trip_through_the_url() {

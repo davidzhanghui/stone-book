@@ -28,6 +28,7 @@ pub enum ObjKind {
     Flow,
     Sheet,
     Base,
+    PdfDoc,
 }
 
 impl ObjKind {
@@ -37,6 +38,7 @@ impl ObjKind {
             "flow" => Self::Flow,
             "sheet" => Self::Sheet,
             "base" => Self::Base,
+            "pdfdoc" => Self::PdfDoc,
             _ => return None,
         })
     }
@@ -47,6 +49,7 @@ impl ObjKind {
             Self::Flow => "flow",
             Self::Sheet => "sheet",
             Self::Base => "base",
+            Self::PdfDoc => "pdfdoc",
         }
     }
 }
@@ -57,6 +60,8 @@ pub enum ObjData {
     Sheet(Sheet),
     /// 多维表格：对象行里只存元数据，字段 / 记录 / 视图在 base_* 表里逐行存
     Base(crate::base::BaseRef),
+    /// PDF 批注阅读：文件在 assets 里，对象行存批注（JSON）
+    Pdf(Arc<crate::pdfdoc::PdfDoc>),
 }
 
 struct Entry {
@@ -119,6 +124,10 @@ fn persist(store: &Store, id: &str, kind: ObjKind, data: &ObjData) {
         }
         ObjData::Sheet(s) => store.save_object(id, kind.as_str(), sheet_to_bytes(&s.borrow())),
         ObjData::Base(b) => store.save_object(id, kind.as_str(), serde_json::to_vec(&b.borrow().meta).unwrap_or_default()),
+        ObjData::Pdf(p) => {
+            let p = p.clone();
+            store.save_object_with(id, kind.as_str(), move || serde_json::to_vec(&*p).unwrap_or_default());
+        }
     }
 }
 
@@ -127,6 +136,7 @@ fn decode(id: &str, kind: ObjKind, bytes: &[u8]) -> Option<ObjData> {
         ObjKind::Base => ObjData::Base(Rc::new(RefCell::new(crate::base::db::load(id, serde_json::from_slice(bytes).ok()?)))),
         ObjKind::Board | ObjKind::Flow => ObjData::Board(Arc::new(serde_json::from_slice(bytes).ok()?)),
         ObjKind::Sheet => ObjData::Sheet(Rc::new(RefCell::new(sheet_from_bytes(bytes)?))),
+        ObjKind::PdfDoc => ObjData::Pdf(Arc::new(serde_json::from_slice(bytes).ok()?)),
     })
 }
 
@@ -134,7 +144,8 @@ fn default_data(kind: ObjKind) -> ObjData {
     match kind {
         ObjKind::Sheet => ObjData::Sheet(Rc::new(RefCell::new(new_sheet()))),
         ObjKind::Flow => ObjData::Board(Arc::new(BoardDoc::new(true))),
-        _ => ObjData::Board(Arc::new(BoardDoc::new(false))),
+        ObjKind::PdfDoc => ObjData::Pdf(Arc::default()),
+        ObjKind::Board | ObjKind::Base => ObjData::Board(Arc::new(BoardDoc::new(false))),
     }
 }
 
@@ -188,6 +199,16 @@ pub fn create_base(kind: crate::base::ViewKind) -> String {
     id
 }
 
+/// 按预设新建多维表格（「任务看板」「日程」）。
+pub fn create_base_preset(preset: &str) -> String {
+    let id = crate::store::new_uuid();
+    let mut b = crate::base::Base::new_preset(&id, preset);
+    b.persist = store().is_some();
+    b.save_all();
+    insert(&id, ObjKind::Base, ObjData::Base(Rc::new(RefCell::new(b))));
+    id
+}
+
 pub fn base(id: &str) -> Option<crate::base::BaseRef> {
     match get(id)? {
         ObjData::Base(b) => Some(b),
@@ -210,6 +231,13 @@ pub fn list_bases() -> Vec<(String, String, usize)> {
             Some((id, meta.name, meta.tables.len()))
         })
         .collect()
+}
+
+pub fn pdf(id: &str) -> Option<Arc<crate::pdfdoc::PdfDoc>> {
+    match get(id)? {
+        ObjData::Pdf(p) => Some(p),
+        _ => None,
+    }
 }
 
 pub fn sheet(id: &str) -> Option<Sheet> {
@@ -276,6 +304,7 @@ pub fn duplicate(id: &str) -> Option<String> {
     let kind = OBJS.with(|o| o.borrow().get(id).map(|e| e.kind))?;
     let copy = match &data {
         ObjData::Board(b) => ObjData::Board(Arc::new((**b).clone())),
+        ObjData::Pdf(p) => ObjData::Pdf(Arc::new((**p).clone())),
         ObjData::Sheet(s) => ObjData::Sheet(Rc::new(RefCell::new(sheet_from_bytes(&sheet_to_bytes(&s.borrow()))?))),
         ObjData::Base(b) => {
             let new_id = crate::store::new_uuid();
@@ -339,6 +368,15 @@ pub fn to_markdown(kind: &str, id: &str) -> String {
             let texts: Vec<String> = b.els.iter().filter(|e| !e.text.is_empty()).map(|e| e.text.replace('\n', " ")).collect();
             format!("[{}：{}]\n", if kind == "flow" { "流程图" } else { "画板" }, texts.join(" / "))
         }
+        Some(ObjData::Pdf(p)) => {
+            let url = format!("file://{}", p.path.replace(' ', "%20"));
+            let mut md = format!("[📄 {}]({url})\n", p.name);
+            if !p.annots.is_empty() {
+                md.push('\n');
+                md.push_str(p.to_markdown().split_once('\n').map_or("", |x| x.1).trim_start());
+            }
+            md
+        }
         None => String::new(),
     }
 }
@@ -365,6 +403,7 @@ pub fn to_html(_kind: &str, id: &str) -> String {
             out
         }
         Some(ObjData::Base(b)) => crate::base::io::to_html(&b.borrow()),
+        Some(ObjData::Pdf(p)) => format!("<p>📄 {}（{} 条批注）</p>", p.name.replace('&', "&amp;").replace('<', "&lt;"), p.annots.len()),
         None => String::new(),
     }
 }

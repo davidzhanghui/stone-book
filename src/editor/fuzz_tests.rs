@@ -209,6 +209,9 @@ fn check_pos(ed: &Editor, p: Pos, name: &str) -> Result<(), String> {
 
 fn check(ed: &Editor) -> Result<(), String> {
     let blocks = &ed.content.blocks;
+    if ed.is_hidden(ed.head.block) {
+        return Err(format!("光标停在被折叠 / 聚焦隐藏的块 {} 上", ed.head.block));
+    }
     if blocks.len() < 2 {
         return Err(format!("只剩 {} 个块", blocks.len()));
     }
@@ -297,7 +300,7 @@ fn step(ed: &mut Editor, rng: &mut Rng, window: &mut Window, cx: &mut gpui::Cont
         return sel + &read_only_step(ed, rng, window, cx);
     }
     let n = ed.content.blocks.len();
-    let op = match rng.below(42) {
+    let op = match rng.below(46) {
         0..=7 => {
             let s = *rng.pick(SNIPPETS);
             ed.insert_text(s, cx);
@@ -483,6 +486,20 @@ fn step(ed: &mut Editor, rng: &mut Rng, window: &mut Window, cx: &mut gpui::Cont
             ed.set_read_only(on, cx);
             format!("{}阅读模式", if on { "进入" } else { "退出" })
         }
+        40..=41 => {
+            let b = 1 + rng.below(n.saturating_sub(1).max(1));
+            ed.toggle_fold_at(b.min(n - 1), cx);
+            format!("折叠 / 展开块 {b}")
+        }
+        42 => {
+            let b = 1 + rng.below(n.saturating_sub(1).max(1));
+            ed.focus_on(b.min(n - 1), cx);
+            format!("聚焦块 {b}")
+        }
+        43 => {
+            ed.exit_focus(cx);
+            "退出聚焦".into()
+        }
         _ => {
             let (r, c) = (1 + rng.below(3), 1 + rng.below(3));
             ed.insert_fragment(vec![Block::table(r, c)], cx);
@@ -577,6 +594,11 @@ fn env_usize(name: &str, default: usize) -> usize {
     std::env::var(name).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
 }
 
+/// 文档 JSON 去掉折叠状态：折叠是视图状态，不进撤销栈，比较文档内容时忽略。
+fn norm(json: &str) -> String {
+    json.replace(",\"collapsed\":true", "")
+}
+
 fn run_seed(seed: u64, steps: usize, store: &crate::store::Store, cx: &mut TestAppContext) {
     // 剪贴板在种子之间共享：清空，保证每个种子单独跑和连着跑结果一致
     cx.update(|cx| cx.write_to_clipboard(gpui::ClipboardItem::new_string(String::new())));
@@ -602,11 +624,11 @@ fn run_seed(seed: u64, steps: usize, store: &crate::store::Store, cx: &mut TestA
             if let Err(e) = check(ed).and_then(|_| round_trip(ed)) {
                 fail(&log, ed, e);
             }
-            if was_read_only && ed.read_only && ed.content.to_json() != before {
+            if was_read_only && ed.read_only && norm(&ed.content.to_json()) != norm(&before) {
                 fail(&log, ed, format!("阅读模式下文档被改了：\n{}", diff(&before, &ed.content.to_json())));
             }
             // 改了文档就必须记过撤销点（checkpoint 会清空重做栈），否则这一步撤销不了，重做还会丢掉它
-            if !undo_redo && !ed.redo_stack.is_empty() && ed.content.to_json() != before {
+            if !undo_redo && !ed.redo_stack.is_empty() && norm(&ed.content.to_json()) != norm(&before) {
                 fail(&log, ed, format!("这一步改了文档却没有记录撤销点：\n{}", diff(&before, &ed.content.to_json())));
             }
         }
@@ -624,7 +646,7 @@ fn run_seed(seed: u64, steps: usize, store: &crate::store::Store, cx: &mut TestA
                 fail(&log, ed, format!("撤销第 {guard} 步后：{e}"));
             }
         }
-        if ed.content.to_json() != start {
+        if norm(&ed.content.to_json()) != norm(&start) {
             fail(&log, ed, format!("撤销到底没有回到种子文档：\n{}", diff(&start, &ed.content.to_json())));
         }
         while !ed.redo_stack.is_empty() {
@@ -633,7 +655,7 @@ fn run_seed(seed: u64, steps: usize, store: &crate::store::Store, cx: &mut TestA
                 fail(&log, ed, format!("重做后：{e}"));
             }
         }
-        if ed.content.to_json() != end {
+        if norm(&ed.content.to_json()) != norm(&end) {
             fail(&log, ed, format!("重做到头没有回到最终文档：\n{}", diff(&end, &ed.content.to_json())));
         }
     })

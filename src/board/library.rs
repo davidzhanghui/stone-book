@@ -26,13 +26,15 @@ pub enum LibItem {
     Icon(&'static str),
     /// 表情（插入为文字）
     Emoji(&'static str),
+    /// 线框控件（见 wire.rs）
+    Wire(u8),
 }
 
 /// 拖到画布上的图形库项。
 #[derive(Clone, Copy, Debug)]
 pub struct LibDrag(pub LibItem);
 
-use LibItem::{Emoji, Icon, Lane, Line, Shape as S};
+use LibItem::{Emoji, Icon, Lane, Line, Shape as S, Wire};
 use ShapeKind as K;
 
 const BASIC: &[(LibItem, &str)] = &[
@@ -165,6 +167,25 @@ const COMPONENT: &[(LibItem, &str)] = &[
     (S(K::RequiredIface), "需求接口"),
 ];
 
+const WIRE: &[(LibItem, &str)] = &[
+    (Wire(0), "按钮"),
+    (Wire(1), "输入框"),
+    (Wire(2), "下拉框"),
+    (Wire(3), "复选框"),
+    (Wire(4), "单选框"),
+    (Wire(5), "开关"),
+    (Wire(6), "搜索框"),
+    (Wire(7), "Tab 栏"),
+    (Wire(8), "导航栏"),
+    (Wire(9), "列表"),
+    (Wire(10), "卡片"),
+    (Wire(11), "图片占位"),
+    (Wire(12), "头像"),
+    (Wire(13), "文本段落"),
+    (Wire(14), "手机外框"),
+    (Wire(15), "浏览器外框"),
+];
+
 const STATE: &[(LibItem, &str)] = &[(S(K::StartDot), "初始状态"), (S(K::EndDot), "终止状态"), (S(K::Bar), "分叉 / 汇合"), (S(K::RoundRect), "状态")];
 
 pub const CATEGORIES: &[(&str, &[(LibItem, &str)])] = &[
@@ -178,6 +199,7 @@ pub const CATEGORIES: &[(&str, &[(LibItem, &str)])] = &[
     ("实体关系图", ER),
     ("组件图", COMPONENT),
     ("状态图", STATE),
+    ("线框", WIRE),
 ];
 
 /// 工具栏「图形」面板里的基础图形（5 × 5）。
@@ -243,6 +265,22 @@ pub fn item_preview(item: LibItem, stroke: Hsla) -> AnyElement {
         }
         Icon(name) => return svg().path(format!("icons/lib/{name}.svg")).size(px(22.)).flex_none().text_color(stroke).into_any_element(),
         Emoji(e) => return div().text_size(px(22.)).line_height(px(26.)).child(e).into_any_element(),
+        Wire(kind) => {
+            // 生成一份缩小的控件当预览
+            let mut d = BoardDoc::new(false);
+            d.els = super::wire::build(&mut d, kind, pt(0., 0.), false);
+            let mut scene = d.to_scene(false);
+            scene.fit(0.);
+            let s = (28. / scene.width.max(1.)).min(24. / scene.height.max(1.));
+            let (w, h) = (scene.width * s, scene.height * s);
+            let scene = Arc::new(scene);
+            return div()
+                .w(px(w.max(4.)))
+                .h(px(h.max(4.)))
+                .flex_none()
+                .child(canvas(|b, _, _| b, move |b, _, win, cx| paint_scene(&scene, View { origin: b.origin, scale: s }, b, win, cx)).size_full())
+                .into_any_element();
+        }
         S(k) => {
             let (w, h) = preview_size(k);
             let mut s = ShapeItem::new(k, rect(1.5, 1.5, w - 3., h - 3.));
@@ -326,8 +364,8 @@ impl BoardEditor {
                 self.conn_preset = Some((start, end, dash));
             }
             Lane(k) => self.set_tool(Tool::Lane(k), cx),
-            // 图标 / 表情：单击直接插到视口中心（素材库）
-            Icon(_) | Emoji(_) => {
+            // 图标 / 表情 / 线框控件：单击直接插到视口中心
+            Icon(_) | Emoji(_) | Wire(_) => {
                 let at = self.to_world(self.canvas_bounds.center());
                 self.insert_icon(item, at, cx);
             }
@@ -356,6 +394,15 @@ impl BoardEditor {
                 el.text_align = 2;
                 el
             }
+            Wire(kind) => {
+                let (w, h) = super::wire::size(kind);
+                let els = super::wire::build(&mut self.doc, kind, pt(at.x - w / 2., at.y - h / 2.), dark);
+                self.sel = els.iter().map(|e| e.id).collect();
+                self.doc.els.extend(els);
+                self.tool = Tool::Select;
+                self.commit(cx);
+                return;
+            }
             _ => return,
         };
         let id = el.id;
@@ -370,7 +417,7 @@ impl BoardEditor {
             S(k) => self.tool == Tool::Shape(k),
             Line(route, start, end, dash) => matches!(self.tool, Tool::Connector(r, _) if r == route) && self.conn_preset == Some((start, end, dash)),
             Lane(k) => self.tool == Tool::Lane(k),
-            Icon(_) | Emoji(_) => false,
+            Icon(_) | Emoji(_) | Wire(_) => false,
         }
     }
 
@@ -405,7 +452,7 @@ impl BoardEditor {
                 self.doc.els.insert(0, el);
                 id
             }
-            Icon(_) | Emoji(_) => {
+            Icon(_) | Emoji(_) | Wire(_) => {
                 self.undo.pop_back();
                 self.insert_icon(d.0, p, cx);
                 return;

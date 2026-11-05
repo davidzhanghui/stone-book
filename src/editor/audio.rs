@@ -208,9 +208,17 @@ impl Editor {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let press = self.block_press(ix, cx);
-        audio_player(id, path, name, width, selected, Some(press), t, cx)
+        let ent = cx.entity().downgrade();
+        let file = path.to_string();
+        let stamp: StampFn = Rc::new(move |secs, _w, cx| {
+            ent.update(cx, |e, cx| e.insert_timestamp(&file, secs, cx)).ok();
+        });
+        audio_player(id, path, name, width, selected, Some(press), Some(stamp), t, cx)
     }
 }
+
+/// 「插入时间戳」回调：参数为当前播放位置（秒）。
+pub(crate) type StampFn = Rc<dyn Fn(f64, &mut Window, &mut App)>;
 
 /// 音频播放条（不依赖编辑器，文档「视频或文件」与电子表格附件预览共用）。
 /// width 为整个卡片宽度；`on_press` 在点击播放键 / 波形时先调用（文档里用来选中块）。
@@ -222,6 +230,7 @@ pub(crate) fn audio_player(
     width: f32,
     selected: bool,
     on_press: Option<super::attach::Press>,
+    on_stamp: Option<StampFn>,
     t: &Theme,
     cx: &mut App,
 ) -> AnyElement {
@@ -257,7 +266,8 @@ pub(crate) fn audio_player(
     }
     let frac = if total > 0. { (pos / total).clamp(0., 1.) as f32 } else { 0. };
     // 波形区宽度 = 卡片宽 - 内边距 - 播放键 - 间距 - 倍速键
-    let wave_w = (width - 2. - 32. - 40. - 14. - 14. - 36.).max(60.);
+    let stamp_w = if on_stamp.is_some() && play_path.is_some() { 28. + 14. } else { 0. };
+    let wave_w = (width - 2. - 32. - 40. - 14. - 14. - 36. - stamp_w).max(60.);
     let bars = ((wave_w + 2.) / 4.).floor().max(1.) as usize;
     let peaks = match &wave {
         WaveState::Ready(w) => pool(&w.peaks, bars),
@@ -265,7 +275,7 @@ pub(crate) fn audio_player(
     };
     let played = (frac * bars as f32).round() as usize;
     let idle_col = t.text_muted.opacity(0.35);
-    let (p1, p2, p3) = (play_path.clone(), play_path.clone(), play_path.clone());
+    let (p1, p2, p3, p4) = (play_path.clone(), play_path.clone(), play_path.clone(), play_path.clone());
     let press2 = on_press.clone();
     let can_play = play_path.is_some();
     let status = match (&wave, exists) {
@@ -376,6 +386,29 @@ pub(crate) fn audio_player(
                         }),
                 ),
         )
+        .when_some(on_stamp.filter(|_| can_play), |d, f| {
+            d.child(
+                div()
+                    .id(("au-stamp", id as usize))
+                    .size(px(28.))
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(px(4.))
+                    .cursor_pointer()
+                    .hover(|s| s.bg(t.hover))
+                    .tooltip(|_, cx| cx.new(|_| crate::ui::Tooltip("插入时间戳（⌥⌘T）".into())).into())
+                    .child(icon("clock", 15., t.text_secondary))
+                    .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                        // 不选中音频块：光标留在正在记笔记的段落里
+                        cx.stop_propagation();
+                        let Some(p) = &p4 else { return };
+                        let secs = crate::media::with(id, p, |pl| pl.position()).unwrap_or(0.);
+                        f(secs, window, cx);
+                    }),
+            )
+        })
         .child(
             div()
                 .id(("au-rate", id as usize))
@@ -401,4 +434,16 @@ pub(crate) fn audio_player(
                 }),
         )
         .into_any_element()
+}
+
+/// 实际交给播放器的文件（ogg 等转码后的 WAV）；波形还没解析完时为 None。
+pub(crate) fn play_path(path: &str, cx: &mut App) -> Option<String> {
+    if !Path::new(path).exists() {
+        return None;
+    }
+    match wave(path, cx) {
+        WaveState::Ready(w) => Some(w.play),
+        _ if !needs_transcode(path) => Some(path.to_string()),
+        _ => None,
+    }
 }
