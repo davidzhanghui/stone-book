@@ -723,6 +723,7 @@ impl CursorStyle {
             CursorStyle::DragLink => &["alias"],
             CursorStyle::DragCopy => &["copy"],
             CursorStyle::ContextualMenu => &["context-menu"],
+            CursorStyle::Move => &["move", "fleur", "all-scroll"],
             CursorStyle::None => {
                 #[cfg(debug_assertions)]
                 panic!("CursorStyle::None should be handled separately in the client");

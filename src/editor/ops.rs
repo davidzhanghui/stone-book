@@ -128,6 +128,7 @@ pub fn slash_items() -> Vec<SlashItem> {
         it("绘图", Svg("pen-tool"), 0x2ea121, "画板", "", "board whiteboard hb huaban draw", SlashAction::Embed("board")),
         it("绘图", Svg("mindmap"), 0x0ea5e9, "思维导图", "", "mindmap swdt siwei naotu siweidaotu", SlashAction::Embed("mindmap")),
         it("绘图", Svg("workflow"), 0xf5a339, "流程图", "", "flow lct liucheng flowchart liuchengtu", SlashAction::Embed("flow")),
+        it("绘图", Svg("pencil"), 0x6965db, "草图", "Excalidraw", "excalidraw sketch caotu cao tu shouhui", SlashAction::Embed("sketch")),
         it("绘图", Tx("UML"), 0x5b5bd6, "UML 时序图", "", "uml sequence sxt shixu shixutu", SlashAction::Diagram(SEQ_TPL)),
         it("绘图", Tx("UML"), 0x5b5bd6, "UML 类图", "", "uml class lt leitu", SlashAction::Diagram(CLASS_TPL)),
         it("绘图", Tx("UML"), 0x5b5bd6, "UML 状态图", "", "uml state ztt zhuangtai zhuangtaitu", SlashAction::Diagram(STATE_TPL)),

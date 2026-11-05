@@ -35,6 +35,7 @@ impl CursorStyle {
             CursorStyle::DragLink => Shape::Alias,
             CursorStyle::DragCopy => Shape::Copy,
             CursorStyle::ContextualMenu => Shape::ContextMenu,
+            CursorStyle::Move => Shape::Move,
             CursorStyle::None => {
                 #[cfg(debug_assertions)]
                 panic!("CursorStyle::None should be handled separately in the client");

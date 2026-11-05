@@ -1618,6 +1618,27 @@ impl Editor {
                 let view = self.live_base(oid, window, cx);
                 div().w(px(maxw - 16.)).h(px(view.read(cx).embed_h)).overflow_hidden().child(view).into_any_element()
             }
+            Some(crate::objects::ObjData::Sketch(d)) => match crate::sketch::preview_size(&d, maxw - 16.) {
+                None => div()
+                    .h(px(140.))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .text_size(px(13.))
+                    .text_color(t.text_muted)
+                    .child(format!("空白{label} · 双击开始编辑"))
+                    .into_any_element(),
+                Some((w, h)) => {
+                    let dark = t.dark;
+                    let bg = crate::sketch::paint::bg_hsla(&d, dark);
+                    div()
+                        .w(px(w))
+                        .h(px(h))
+                        .bg(bg)
+                        .child(canvas(|b, _, _| b, move |b, _, window, cx| crate::sketch::paint::paint_fit(&d, b, dark, window, cx)).size_full())
+                        .into_any_element()
+                }
+            },
             Some(data) => {
                 let mut scene = match &data {
                     crate::objects::ObjData::Board(b) => b.to_scene(t.dark),
@@ -1657,6 +1678,7 @@ impl Editor {
             "sheet" => "▦",
             "flow" => "⇢",
             "pdfdoc" => "📄",
+            "sketch" => "✐",
             _ => "✎",
         };
         div()

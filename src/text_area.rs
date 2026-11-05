@@ -189,6 +189,8 @@ pub struct TextArea {
     revealed: Range<usize>,
     /// 代码编辑模式（代码绘图的编辑区）：等宽字体、左侧行号、当前行高亮，按该语言做语法着色
     code: Option<&'static str>,
+    /// 字体（默认 PingFang SC；草图用手写体）
+    font: Option<&'static str>,
 }
 
 impl TextArea {
@@ -198,6 +200,10 @@ impl TextArea {
     }
 
     /// 开启代码编辑模式（lang 见 `highlight::highlight`）。
+    pub fn set_font(&mut self, f: &'static str) {
+        self.font = Some(f);
+    }
+
     pub fn set_code(&mut self, lang: &'static str) {
         self.code = Some(lang);
     }
@@ -220,6 +226,7 @@ impl TextArea {
             scroll_max: px(0.),
             revealed: 0..0,
             code: None,
+            font: None,
         }
     }
 
@@ -683,7 +690,7 @@ impl Element for AreaEl {
         let text: SharedString = if empty { input.placeholder.clone() } else { input.content.clone().into() };
         let color = if empty { t.placeholder } else { st.color };
         let code = input.code;
-        let mut font = gpui::font(if code.is_some() { "Menlo" } else { "PingFang SC" });
+        let mut font = gpui::font(if code.is_some() { "Menlo" } else { input.font.unwrap_or("PingFang SC") });
         font.weight = if st.bold { FontWeight::BOLD } else { FontWeight::NORMAL };
         // 按样式分段生成文字 run，再在输入法组字区间上叠加下划线
         let base_fmt = crate::canvas::Fmt { bold: st.bold, deco: if empty { 0 } else { st.deco }, color: None };

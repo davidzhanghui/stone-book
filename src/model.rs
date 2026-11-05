@@ -803,6 +803,7 @@ impl BlockKind {
                 "sheet" => "电子表格",
                 "base" => "多维表格",
                 "pdfdoc" => "PDF 阅读",
+                "sketch" => "草图",
                 _ => "嵌入对象",
             },
             BlockKind::Unknown { .. } => "不支持的块",

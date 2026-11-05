@@ -29,6 +29,7 @@ pub enum ObjKind {
     Sheet,
     Base,
     PdfDoc,
+    Sketch,
 }
 
 impl ObjKind {
@@ -39,6 +40,7 @@ impl ObjKind {
             "sheet" => Self::Sheet,
             "base" => Self::Base,
             "pdfdoc" => Self::PdfDoc,
+            "sketch" => Self::Sketch,
             _ => return None,
         })
     }
@@ -50,6 +52,7 @@ impl ObjKind {
             Self::Sheet => "sheet",
             Self::Base => "base",
             Self::PdfDoc => "pdfdoc",
+            Self::Sketch => "sketch",
         }
     }
 }
@@ -62,6 +65,8 @@ pub enum ObjData {
     Base(crate::base::BaseRef),
     /// PDF 批注阅读：文件在 assets 里，对象行存批注（JSON）
     Pdf(Arc<crate::pdfdoc::PdfDoc>),
+    /// 草图：官方 `.excalidraw` 结构（不可变快照，写线程序列化）
+    Sketch(Arc<crate::sketch::SketchDoc>),
 }
 
 struct Entry {
@@ -128,6 +133,10 @@ fn persist(store: &Store, id: &str, kind: ObjKind, data: &ObjData) {
             let p = p.clone();
             store.save_object_with(id, kind.as_str(), move || serde_json::to_vec(&*p).unwrap_or_default());
         }
+        ObjData::Sketch(d) => {
+            let d = d.clone();
+            store.save_object_with(id, kind.as_str(), move || serde_json::to_vec(&*d).unwrap_or_default());
+        }
     }
 }
 
@@ -137,6 +146,7 @@ fn decode(id: &str, kind: ObjKind, bytes: &[u8]) -> Option<ObjData> {
         ObjKind::Board | ObjKind::Flow => ObjData::Board(Arc::new(serde_json::from_slice(bytes).ok()?)),
         ObjKind::Sheet => ObjData::Sheet(Rc::new(RefCell::new(sheet_from_bytes(bytes)?))),
         ObjKind::PdfDoc => ObjData::Pdf(Arc::new(serde_json::from_slice(bytes).ok()?)),
+        ObjKind::Sketch => ObjData::Sketch(Arc::new(serde_json::from_slice(bytes).ok()?)),
     })
 }
 
@@ -145,6 +155,7 @@ fn default_data(kind: ObjKind) -> ObjData {
         ObjKind::Sheet => ObjData::Sheet(Rc::new(RefCell::new(new_sheet()))),
         ObjKind::Flow => ObjData::Board(Arc::new(BoardDoc::new(true))),
         ObjKind::PdfDoc => ObjData::Pdf(Arc::default()),
+        ObjKind::Sketch => ObjData::Sketch(Arc::new(crate::sketch::SketchDoc::new())),
         ObjKind::Board | ObjKind::Base => ObjData::Board(Arc::new(BoardDoc::new(false))),
     }
 }
@@ -180,6 +191,13 @@ pub fn get(id: &str) -> Option<ObjData> {
 
 pub fn version(id: &str) -> u64 {
     OBJS.with(|o| o.borrow().get(id).map(|e| e.version).unwrap_or(0))
+}
+
+pub fn sketch(id: &str) -> Option<Arc<crate::sketch::SketchDoc>> {
+    match get(id)? {
+        ObjData::Sketch(d) => Some(d),
+        _ => None,
+    }
 }
 
 pub fn board(id: &str) -> Option<Arc<BoardDoc>> {
@@ -305,6 +323,7 @@ pub fn duplicate(id: &str) -> Option<String> {
     let copy = match &data {
         ObjData::Board(b) => ObjData::Board(Arc::new((**b).clone())),
         ObjData::Pdf(p) => ObjData::Pdf(Arc::new((**p).clone())),
+        ObjData::Sketch(d) => ObjData::Sketch(Arc::new((**d).clone())),
         ObjData::Sheet(s) => ObjData::Sheet(Rc::new(RefCell::new(sheet_from_bytes(&sheet_to_bytes(&s.borrow()))?))),
         ObjData::Base(b) => {
             let new_id = crate::store::new_uuid();
@@ -361,6 +380,7 @@ pub fn to_markdown(kind: &str, id: &str) -> String {
             out
         }
         Some(ObjData::Base(b)) => crate::base::io::to_markdown(&b.borrow()),
+        Some(ObjData::Sketch(d)) => crate::sketch::to_markdown(&d),
         Some(ObjData::Board(b)) => {
             if let Some(md) = b.mind_outline_md() {
                 return md;
@@ -404,6 +424,7 @@ pub fn to_html(_kind: &str, id: &str) -> String {
         }
         Some(ObjData::Base(b)) => crate::base::io::to_html(&b.borrow()),
         Some(ObjData::Pdf(p)) => format!("<p>📄 {}（{} 条批注）</p>", p.name.replace('&', "&amp;").replace('<', "&lt;"), p.annots.len()),
+        Some(ObjData::Sketch(d)) => crate::sketch::to_html(&d),
         None => String::new(),
     }
 }

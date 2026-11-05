@@ -1009,6 +1009,7 @@ impl Platform for MacPlatform {
                 CursorStyle::DragLink => msg_send![class!(NSCursor), dragLinkCursor],
                 CursorStyle::DragCopy => msg_send![class!(NSCursor), dragCopyCursor],
                 CursorStyle::ContextualMenu => msg_send![class!(NSCursor), contextualMenuCursor],
+                CursorStyle::Move => move_cursor(),
                 CursorStyle::None => unreachable!(),
             };
 
@@ -1711,4 +1712,24 @@ mod tests {
         platform.0.lock().pasteboard = unsafe { NSPasteboard::pasteboardWithUniqueName(nil) };
         platform
     }
+}
+
+/// 四向移动光标：AppKit 没有公开的 moveCursor（私有 `_moveCursor` 会抛异常），
+/// 改用 HIServices 自带的系统光标资源（WebKit 的 CSS `move` 同源），缺失时退回张开的手。
+fn move_cursor() -> id {
+    static CURSOR: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    let ptr = *CURSOR.get_or_init(|| unsafe {
+        let path = "/System/Library/Frameworks/ApplicationServices.framework/Versions/A/Frameworks/HIServices.framework/Versions/A/Resources/cursors/move/cursor.pdf";
+        let image: id = msg_send![class!(NSImage), alloc];
+        let image: id = msg_send![image, initWithContentsOfFile: ns_string(path)];
+        if image.is_null() {
+            return 0;
+        }
+        // 资源原尺寸偏大，按系统光标的 24pt 显示，热点在中心（info.plist 的 hotx/hoty = 12）
+        let _: () = msg_send![image, setSize: cocoa::foundation::NSSize::new(24., 24.)];
+        let cursor: id = msg_send![class!(NSCursor), alloc];
+        let cursor: id = msg_send![cursor, initWithImage: image hotSpot: cocoa::foundation::NSPoint::new(12., 12.)];
+        cursor as usize
+    });
+    if ptr == 0 { unsafe { msg_send![class!(NSCursor), openHandCursor] } } else { ptr as id }
 }

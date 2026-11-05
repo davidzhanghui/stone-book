@@ -68,6 +68,7 @@ cp target/release/stonebrook "$APP/Contents/MacOS/Stonebrook"
 cp assets/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 # 画板素材的第三方许可全文（MIT / Apache-2.0 要求随分发附带）
 cp assets/iconlib/THIRD_PARTY_LICENSES.txt "$APP/Contents/Resources/THIRD_PARTY_LICENSES.txt"
+cp assets/fonts/LICENSE-StonebrookSketch.txt "$APP/Contents/Resources/LICENSE-StonebrookSketch.txt"
 cat >"$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

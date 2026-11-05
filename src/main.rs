@@ -28,6 +28,7 @@ mod seed;
 mod settings;
 mod sheet;
 mod shortcuts;
+mod sketch;
 mod store;
 mod templates;
 mod text_area;
@@ -149,6 +150,7 @@ fn bind_keys(cx: &mut App) {
     line_input::bind_keys(cx);
     text_area::bind_keys(cx);
     board::view::bind_keys(cx);
+    sketch::view::bind_keys(cx);
     sheet::bind_keys(cx);
     base::editor::bind_keys(cx);
 }
@@ -327,6 +329,7 @@ fn main() {
     }
     Application::new().with_assets(ui::Assets).run(move |cx: &mut App| {
         cx.set_global(theme::Theme::light());
+        sketch::fonts::register(cx);
         bind_keys(cx);
         // 记下内置按键作为基准，再叠加用户在快捷键面板里改过的按键
         shortcuts::init(cx);

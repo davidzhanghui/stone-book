@@ -391,7 +391,7 @@ impl AssetSource for Assets {
         // 画板图标库：icons/lib/<名字>.svg
         let body = match name.strip_prefix("lib/") {
             Some(n) => return Ok(crate::board::iconlib::svg(n, None).map(|s| Cow::Owned(s.into_bytes()))),
-            None => icon_body(name).or_else(|| crate::sheet::icons::body(name)),
+            None => icon_body(name).or_else(|| crate::sheet::icons::body(name)).or_else(|| crate::sketch::icons::body(name)),
         };
         Ok(body.map(|body| {
             Cow::Owned(

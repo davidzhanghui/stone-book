@@ -351,6 +351,8 @@ pub(crate) fn fontdb() -> Arc<resvg::usvg::fontdb::Database> {
     DB.get_or_init(|| {
         let mut db = resvg::usvg::fontdb::Database::new();
         db.load_system_fonts();
+        // 草图手写字体（内嵌）
+        db.load_font_data(crate::sketch::fonts::hand_ttf().to_vec());
         db.set_sans_serif_family("PingFang SC");
         Arc::new(db)
     })
