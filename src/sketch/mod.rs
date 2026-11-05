@@ -8,9 +8,12 @@
 
 #[cfg(test)]
 mod editor_tests;
+pub mod fonts;
 pub mod geom;
+pub mod icons;
 mod interact;
 pub mod io;
+pub mod mermaid;
 pub mod model;
 mod ops;
 pub mod paint;
@@ -18,6 +21,7 @@ pub mod render;
 pub mod svg;
 #[cfg(feature = "dev")]
 mod test_drive;
+mod tools;
 mod ui;
 pub mod view;
 

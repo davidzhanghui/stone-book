@@ -209,7 +209,7 @@ pub fn hit(e: &Element, p: V, tol: f64) -> bool {
             let c = center(e);
             let q = p.rot(-e.angle, c);
             let (x0, y0, x1, y1) = (e.x, e.y, e.x + e.width, e.y + e.height);
-            let filled = e.has_fill() || matches!(e.kind.as_str(), "text" | "image" | "iframe" | "embeddable");
+            let filled = e.has_fill() || matches!(e.kind.as_str(), "text" | "image" | "iframe" | "embeddable" | "stickynote");
             match e.kind.as_str() {
                 "ellipse" => {
                     let (a, b) = ((e.width / 2.).max(1.), (e.height / 2.).max(1.));
@@ -343,6 +343,10 @@ pub fn update_bound_arrows(doc: &mut SketchDoc, moved: &[String]) {
         if pts.len() < 2 {
             continue;
         }
+        if e.elbowed() {
+            reroute_elbow(doc, i);
+            continue;
+        }
         // 旋转过的线：先转成世界坐标点、再去掉旋转
         let c = rot_center(&e);
         if e.angle != 0. {
@@ -382,12 +386,138 @@ pub fn update_bound_arrows(doc: &mut SketchDoc, moved: &[String]) {
     }
 }
 
+// ───────────── 折线箭头（elbow） ─────────────
+
+/// 绑定目标朝向 toward 的那条边的中点（外推 gap），以及该边的外法线方向。
+pub fn elbow_side_point(t: &Element, toward: V, gap: f64) -> (V, V) {
+    let r = bounds(t);
+    let c = r.center();
+    let (hw, hh) = ((r.w() / 2.).max(1.), (r.h() / 2.).max(1.));
+    let d = toward.sub(c);
+    if (d.x / hw).abs() >= (d.y / hh).abs() {
+        let s = if d.x >= 0. { 1. } else { -1. };
+        (v(c.x + s * (hw + gap), c.y), v(s, 0.))
+    } else {
+        let s = if d.y >= 0. { 1. } else { -1. };
+        (v(c.x, c.y + s * (hh + gap)), v(0., s))
+    }
+}
+
+/// 正交走线：起点沿 ha 方向离开、终点沿 hb 的反方向进入（ha / hb 为 None 时按两点相对位置推断）。
+pub fn elbow_route(a: V, ha: Option<V>, b: V, hb: Option<V>) -> Vec<V> {
+    let d = b.sub(a);
+    let dom = |d: V| if d.x.abs() >= d.y.abs() { v(d.x.signum(), 0.) } else { v(0., d.y.signum()) };
+    let stub = 20.;
+    let (a1, ha) = match ha {
+        Some(h) => (a.add(h.scale(stub)), h),
+        None => (a, dom(d)),
+    };
+    let (b1, hb) = match hb {
+        Some(h) => (b.add(h.scale(stub)), h),
+        None => (b, dom(a.sub(b))),
+    };
+    let mut pts = vec![a, a1];
+    let horiz_a = ha.x != 0.;
+    let horiz_b = hb.x != 0.;
+    match (horiz_a, horiz_b) {
+        (true, true) => {
+            let mx = (a1.x + b1.x) / 2.;
+            pts.extend([v(mx, a1.y), v(mx, b1.y)]);
+        }
+        (false, false) => {
+            let my = (a1.y + b1.y) / 2.;
+            pts.extend([v(a1.x, my), v(b1.x, my)]);
+        }
+        (true, false) => pts.push(v(b1.x, a1.y)),
+        (false, true) => pts.push(v(a1.x, b1.y)),
+    }
+    pts.extend([b1, b]);
+    // 去掉重合点与共线的中间点
+    let mut out: Vec<V> = vec![];
+    for p in pts {
+        if out.last().is_some_and(|l: &V| l.dist(p) < 0.01) {
+            continue;
+        }
+        if out.len() >= 2 {
+            let (p0, p1) = (out[out.len() - 2], out[out.len() - 1]);
+            let collinear = ((p0.x - p1.x).abs() < 0.01 && (p1.x - p.x).abs() < 0.01) || ((p0.y - p1.y).abs() < 0.01 && (p1.y - p.y).abs() < 0.01);
+            if collinear {
+                out.pop();
+            }
+        }
+        out.push(p);
+    }
+    if out.len() < 2 {
+        out = vec![a, b];
+    }
+    out
+}
+
+/// 按当前端点 / 绑定重新计算折线箭头的走线。
+pub fn reroute_elbow(doc: &mut SketchDoc, i: usize) {
+    let e = doc.elements[i].clone();
+    let pts = world_points(&e);
+    if pts.len() < 2 {
+        return;
+    }
+    let (a0, b0) = (pts[0], pts[pts.len() - 1]);
+    let st = e.binding(true).and_then(|b| doc.get(&b.element_id).cloned().map(|t| (t, b.gap)));
+    let et = e.binding(false).and_then(|b| doc.get(&b.element_id).cloned().map(|t| (t, b.gap)));
+    let toward_a = et.as_ref().map(|(t, _)| center(t)).unwrap_or(b0);
+    let toward_b = st.as_ref().map(|(t, _)| center(t)).unwrap_or(a0);
+    let (a, ha) = match &st {
+        Some((t, gap)) => {
+            let (p, h) = elbow_side_point(t, toward_a, *gap);
+            (p, Some(h))
+        }
+        None => (a0, None),
+    };
+    let (b, hb) = match &et {
+        Some((t, gap)) => {
+            let (p, h) = elbow_side_point(t, toward_b, *gap);
+            (p, Some(h))
+        }
+        None => (b0, None),
+    };
+    let route = elbow_route(a, ha, b, hb);
+    let el = &mut doc.elements[i];
+    el.angle = 0.;
+    el.x = route[0].x;
+    el.y = route[0].y;
+    el.points = Some(route.iter().map(|p| [p.x - route[0].x, p.y - route[0].y]).collect());
+    el.set("fixedSegments", serde_json::Value::Null);
+    el.normalize_points();
+    el.bump();
+}
+
+/// 线 / 箭头每一段的中点（世界坐标，曲线取曲线上的中点）—— 拖它可以把线弯过去。
+pub fn segment_mids(e: &Element) -> Vec<V> {
+    let pts = world_points(e);
+    if pts.len() < 2 {
+        return vec![];
+    }
+    let round = e.roundness().is_some() && !e.elbowed() && pts.len() >= 3;
+    if round {
+        let c = curve_points(&pts, true);
+        (0..pts.len() - 1).map(|i| c[(i * 10 + 5).min(c.len() - 1)]).collect()
+    } else {
+        pts.windows(2).map(|w| v((w[0].x + w[1].x) / 2., (w[0].y + w[1].y) / 2.)).collect()
+    }
+}
+
 // ───────────── 文字 ─────────────
 
-/// 估算一行文字宽度（与导出 / 换行共用，保证屏幕、SVG、PNG 一致）。
-pub fn text_width(s: &str, size: f64) -> f64 {
+/// 一行文字宽度（与导出 / 换行共用，保证屏幕、SVG、PNG 一致）。
+/// 手写体用内嵌字体的真实步进；其他字体按字符类别估算。
+pub fn text_width(s: &str, size: f64, family: i64) -> f64 {
+    let hand = is_hand_family(family);
     s.chars()
         .map(|c| {
+            if hand {
+                if let Some(a) = super::fonts::hand_advance(c) {
+                    return a * size;
+                }
+            }
             let w = if c.is_ascii() {
                 match c {
                     'i' | 'l' | 'j' | '.' | ',' | '\'' | '!' | '|' | ':' | ';' => 0.32,
@@ -407,8 +537,13 @@ pub fn text_width(s: &str, size: f64) -> f64 {
         .sum()
 }
 
+/// 手写字体族（Virgil / Excalifont）
+pub fn is_hand_family(f: i64) -> bool {
+    !matches!(f, 2 | 3 | 6 | 7 | 8 | 9)
+}
+
 /// 按最大宽度换行（中文逐字可断，英文按单词断）。
-pub fn wrap_text(text: &str, size: f64, max_w: f64) -> String {
+pub fn wrap_text(text: &str, size: f64, max_w: f64, family: i64) -> String {
     if max_w <= size {
         return text.to_string();
     }
@@ -420,7 +555,7 @@ pub fn wrap_text(text: &str, size: f64, max_w: f64) -> String {
             if word.is_empty() {
                 return;
             }
-            if text_width(&format!("{line}{word}"), size) <= max_w || line.is_empty() {
+            if text_width(&format!("{line}{word}"), size, family) <= max_w || line.is_empty() {
                 line.push_str(word);
             } else {
                 out.push(std::mem::take(line).trim_end().to_string());
@@ -428,10 +563,10 @@ pub fn wrap_text(text: &str, size: f64, max_w: f64) -> String {
             }
             word.clear();
             // 单个超长单词：硬断
-            while text_width(line, size) > max_w && line.chars().count() > 1 {
+            while text_width(line, size, family) > max_w && line.chars().count() > 1 {
                 let mut cut = String::new();
                 for ch in line.chars() {
-                    if text_width(&format!("{cut}{ch}"), size) > max_w && !cut.is_empty() {
+                    if text_width(&format!("{cut}{ch}"), size, family) > max_w && !cut.is_empty() {
                         break;
                     }
                     cut.push(ch);
@@ -456,9 +591,9 @@ pub fn wrap_text(text: &str, size: f64, max_w: f64) -> String {
     out.join("\n")
 }
 
-pub fn text_size(text: &str, size: f64, line_h: f64) -> (f64, f64) {
+pub fn text_size(text: &str, size: f64, line_h: f64, family: i64) -> (f64, f64) {
     let lines: Vec<&str> = text.split('\n').collect();
-    let w = lines.iter().map(|l| text_width(l, size)).fold(0., f64::max);
+    let w = lines.iter().map(|l| text_width(l, size, family)).fold(0., f64::max);
     (w.max(size * 0.3), lines.len().max(1) as f64 * size * line_h)
 }
 
@@ -469,12 +604,12 @@ pub fn fit_text(e: &mut Element) {
     let lh = e.line_height();
     let auto = e.get("autoResize").and_then(|v| v.as_bool()).unwrap_or(true);
     if auto {
-        let (w, h) = text_size(&text, fs, lh);
+        let (w, h) = text_size(&text, fs, lh, e.font_family());
         e.width = w;
         e.height = h;
     } else {
-        let wrapped = wrap_text(&e.original_text(), fs, e.width);
-        let (_, h) = text_size(&wrapped, fs, lh);
+        let wrapped = wrap_text(&e.original_text(), fs, e.width, e.font_family());
+        let (_, h) = text_size(&wrapped, fs, lh, e.font_family());
         e.text = Some(wrapped);
         e.height = h;
     }
@@ -487,6 +622,7 @@ pub fn container_text_max_w(c: &Element) -> f64 {
         "ellipse" => (w / 2. * std::f64::consts::SQRT_2 - BOUND_TEXT_PADDING * 2.).max(10.),
         "diamond" => (w / 2. - BOUND_TEXT_PADDING * 2.).max(10.),
         "arrow" | "line" => 220.,
+        "stickynote" => (w - STICKY_PADDING * 2.).max(10.),
         _ => (w - BOUND_TEXT_PADDING * 2.).max(10.),
     }
 }
@@ -503,6 +639,10 @@ fn container_text_max_h(c: &Element) -> f64 {
 /// 按容器（或箭头）重新排版它的绑定文字：换行、必要时撑高容器、居中摆放。
 pub fn layout_bound_text(doc: &mut SketchDoc, container: &str) {
     let Some(c) = doc.get(container).cloned() else { return };
+    if c.is_sticky() {
+        layout_sticky(doc, container);
+        return;
+    }
     let Some(tid) = c.bound_text_id() else { return };
     let Some(ti) = doc.index(&tid) else { return };
     let t = doc.elements[ti].clone();
@@ -512,8 +652,8 @@ pub fn layout_bound_text(doc: &mut SketchDoc, container: &str) {
     let fs = t.font_size_or();
     let lh = t.line_height();
     let max_w = container_text_max_w(&c);
-    let wrapped = wrap_text(&t.original_text(), fs, max_w);
-    let (tw, th) = text_size(&wrapped, fs, lh);
+    let wrapped = wrap_text(&t.original_text(), fs, max_w, t.font_family());
+    let (tw, th) = text_size(&wrapped, fs, lh, t.font_family());
     let (x, y) = if c.is_linear() {
         let pts = world_points(&c);
         let mid = polyline_mid(&curve_points(&pts, c.roundness().is_some() && !c.elbowed()));
@@ -577,6 +717,75 @@ pub fn polyline_mid(pts: &[V]) -> V {
         acc += l;
     }
     pts[0]
+}
+
+/// 便签排版（官方 `getStickyNoteLayout`）：字号从用户设定（baseFontSize）往下缩到 16，
+/// 还放不下才把便签撑高；便签不会矮于用户给的高度（baseHeight）。底部留 20px 日期栏。
+pub fn layout_sticky(doc: &mut SketchDoc, id: &str) {
+    let Some(c) = doc.get(id).cloned() else { return };
+    let base_h = c.get("baseHeight").and_then(|v| v.as_f64()).filter(|h| *h > 0.).unwrap_or(c.height).max(STICKY_MIN);
+    let inset_y = STICKY_PADDING * 2. + STICKY_FOOTER_H;
+    let label = c.bound_text_id().and_then(|t| doc.index(&t)).map(|i| doc.elements[i].clone()).filter(|t| !t.is_deleted);
+    let Some(t) = label else {
+        if let Some(ce) = doc.get_mut(id) {
+            if ce.height != base_h {
+                ce.height = base_h;
+                ce.bump();
+            }
+            ce.set("baseHeight", serde_json::json!(base_h));
+        }
+        return;
+    };
+    let fam = t.font_family();
+    let lh = t.line_height();
+    let base_fs = t.get("baseFontSize").and_then(|v| v.as_f64()).unwrap_or(t.font_size_or()).clamp(1., 512.);
+    let min_fs = STICKY_MIN_FONT.min(base_fs);
+    let max_w = (c.width - STICKY_PADDING * 2.).max(1.);
+    let max_h = (base_h - inset_y).max(0.);
+    let original = t.original_text();
+    let blank = original.trim().is_empty();
+    let mut fs = base_fs;
+    let (mut wrapped, mut tw, mut th);
+    loop {
+        wrapped = wrap_text(&original, fs, max_w, fam);
+        (tw, th) = text_size(&wrapped, fs, lh, fam);
+        let fits = th <= max_h + 0.01 && tw <= max_w + 0.5;
+        if blank || fits || fs <= min_fs {
+            break;
+        }
+        fs = (fs - 2.).max(min_fs);
+    }
+    let h = if blank { base_h } else { base_h.max(th + inset_y) };
+    let x = match t.text_align() {
+        "left" => c.x + STICKY_PADDING,
+        "right" => c.x + c.width - STICKY_PADDING - tw,
+        _ => c.x + c.width / 2. - tw / 2.,
+    };
+    let body_bottom = c.y + h - STICKY_PADDING - STICKY_FOOTER_H;
+    let y = match t.vertical_align() {
+        "top" => c.y + STICKY_PADDING,
+        "bottom" => body_bottom - th,
+        _ => (c.y + h / 2. - th / 2.).min(body_bottom - th).max(c.y + STICKY_PADDING),
+    };
+    if let Some(ce) = doc.get_mut(id) {
+        if ce.height != h {
+            ce.height = h;
+            ce.bump();
+        }
+        ce.set("baseHeight", serde_json::json!(base_h));
+    }
+    if let Some(te) = doc.get_mut(&t.id) {
+        te.text = Some(wrapped);
+        te.font_size = Some(fs);
+        te.set("baseFontSize", serde_json::json!(base_fs));
+        te.x = x;
+        te.y = y;
+        te.width = tw;
+        te.height = th;
+        te.angle = c.angle;
+        te.stroke_color = c.stroke_color.clone();
+        te.bump();
+    }
 }
 
 /// 自适应圆角半径（官方 getCornerRadius）
@@ -646,9 +855,9 @@ mod tests {
 
     #[test]
     fn wrap_cjk_and_words() {
-        let s = wrap_text("hello world foo", 20., 70.);
+        let s = wrap_text("hello world foo", 20., 70., FONT_NORMAL);
         assert!(s.lines().count() >= 2);
-        let s = wrap_text("一二三四五六七八", 20., 60.);
-        assert!(s.lines().all(|l| text_width(l, 20.) <= 60.));
+        let s = wrap_text("一二三四五六七八", 20., 60., FONT_NORMAL);
+        assert!(s.lines().all(|l| text_width(l, 20., FONT_NORMAL) <= 60.));
     }
 }

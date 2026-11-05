@@ -44,6 +44,26 @@ impl SketchEditor {
         if self.sel.is_empty() {
             return;
         }
+        // 线编辑模式：删选中的节点（至少留两个）
+        if let (Some(id), Some(i)) = (self.line_edit.clone(), self.line_pt) {
+            if self.doc.get(&id).is_some_and(|e| e.pts().len() > 2 && i < e.pts().len()) {
+                self.snapshot();
+                if let Some(e) = self.doc.get_mut(&id) {
+                    let mut pts = geom::abs_points(e);
+                    pts.remove(i);
+                    e.x = pts[0].x;
+                    e.y = pts[0].y;
+                    e.points = Some(pts.iter().map(|q| [q.x - pts[0].x, q.y - pts[0].y]).collect());
+                    e.normalize_points();
+                    e.bump();
+                }
+                self.line_pt = None;
+                geom::update_bound_arrows(&mut self.doc, &[]);
+                geom::layout_bound_text(&mut self.doc, &id);
+                self.commit(cx);
+            }
+            return;
+        }
         self.snapshot();
         let ids: Vec<String> = self.sel.iter().filter(|id| self.doc.get(id).is_some_and(|e| !e.locked)).cloned().collect();
         self.delete_ids(&ids);
@@ -88,7 +108,16 @@ impl SketchEditor {
     }
 
     pub(super) fn escape(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.editing.is_some() {
+        if self.mermaid.is_some() || self.prompt.is_some() || self.eyedropper.is_some() {
+            self.mermaid = None;
+            self.prompt = None;
+            self.eyedropper = None;
+            window.focus(&self.focus);
+        } else if self.line_edit.is_some() || self.crop_edit.is_some() {
+            self.line_edit = None;
+            self.line_pt = None;
+            self.crop_edit = None;
+        } else if self.editing.is_some() {
             self.finish_edit(cx);
             window.focus(&self.focus);
         } else if let Some(id) = self.multi.clone() {
@@ -461,6 +490,15 @@ impl SketchEditor {
     /// 新元素套用当前样式
     pub(super) fn apply_cur(&self, e: &mut Element) {
         let c = &self.cur;
+        if e.is_sticky() {
+            e.stroke_color = c.sticky_ink.clone();
+            e.background_color = c.sticky_bg.clone();
+            e.fill_style = "solid".into();
+            e.roughness = c.roughness;
+            e.opacity = c.opacity;
+            e.set("roundness", if c.round { json!({ "type": 3 }) } else { Value::Null });
+            return;
+        }
         e.stroke_color = c.stroke.clone();
         if !e.is_text() && !e.is_linear() || (e.is_linear() && c.bg != TRANSPARENT) {
             e.background_color = c.bg.clone();
@@ -484,6 +522,15 @@ impl SketchEditor {
                 if e.kind == "arrow" {
                     e.set("startArrowhead", c.start_arrow.clone().map(Value::String).unwrap_or(Value::Null));
                     e.set("endArrowhead", c.end_arrow.clone().map(Value::String).unwrap_or(Value::Null));
+                    match c.arrow_type {
+                        "sharp" => e.set("roundness", Value::Null),
+                        "elbow" => {
+                            e.set("roundness", Value::Null);
+                            e.set("elbowed", json!(true));
+                            e.set("fixedSegments", Value::Null);
+                        }
+                        _ => e.set("roundness", json!({ "type": 2 })),
+                    }
                 }
             }
             _ => {}
@@ -549,6 +596,10 @@ impl SketchEditor {
         t.set("frameId", c.extra.get("frameId").cloned().unwrap_or(Value::Null));
         if c.is_linear() {
             t.font_size = Some((c.stroke_width * 4. + 8.).clamp(14., 20.).min(self.cur.font_size));
+        }
+        if c.is_sticky() {
+            t.stroke_color = c.stroke_color.clone();
+            t.set("baseFontSize", json!(self.cur.font_size));
         }
         t.group_ids = c.group_ids.clone();
         let tid = t.id.clone();
@@ -672,6 +723,7 @@ impl SketchEditor {
                 if let Some(ce) = self.doc.get_mut(&c) {
                     ce.remove_bound(&ed.id);
                 }
+                geom::layout_bound_text(&mut self.doc, &c);
                 self.sel = [c].into_iter().collect();
             } else {
                 self.sel.remove(&ed.id);
@@ -709,7 +761,11 @@ impl SketchEditor {
             );
         }
         let style = self.text_style(&e, cx);
-        a.update(cx, |a, _| a.set_style(style));
+        let fam = super::render::font_family(e.font_family()).0;
+        a.update(cx, |a, _| {
+            a.set_style(style);
+            a.set_font(fam);
+        });
         let fs = e.font_size_or();
         // 编辑框：容器文字用容器可写区域，独立文字按内容 + 余量
         let (x, y, w, h) = match e.container_id().and_then(|c| self.doc.get(c)) {

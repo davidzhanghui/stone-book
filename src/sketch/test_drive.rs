@@ -24,13 +24,13 @@ impl SketchEditor {
                     let p = a.add(b.sub(a).scale(i as f64 / 8.));
                     self.drag_to(p, shift, false, cx);
                 }
-                self.release(b, shift, cx);
+                self.release(b, shift, window, cx);
             }
             "click" if n.len() >= 2 => {
                 let p = v(n[0], n[1]);
                 let clicks = n.get(2).copied().unwrap_or(1.) as usize;
                 self.press(p, shift, false, clicks, window, cx);
-                self.release(p, shift, cx);
+                self.release(p, shift, window, cx);
             }
             // 在 (x, y) 新建文字（或写进那里的容器）
             "text" if n.len() >= 2 => {
@@ -78,6 +78,67 @@ impl SketchEditor {
                 }
             }
             "dump" => self.test_dump(),
+            // sel KIND [N]：选中第 N 个某种元素（容器文字不算）
+            "sel" => {
+                let kind = parts.get(1).copied().unwrap_or("");
+                let n = parts.get(2).and_then(|s| s.parse::<usize>().ok()).unwrap_or(0);
+                if let Some(id) = self.doc.live().filter(|e| e.kind == kind && e.container_id().is_none()).nth(n).map(|e| e.id.clone()) {
+                    self.tool = Tool::Select;
+                    self.sel = [id].into_iter().collect();
+                }
+            }
+            // pop color-stroke | color-bg | tools | head-start | head-end | fonts | none
+            "pop" => {
+                self.popover = match parts.get(1).copied().unwrap_or("") {
+                    "color-stroke" => Some(super::view::Popover::Color(super::view::PickTarget::Stroke)),
+                    "color-bg" => Some(super::view::Popover::Color(super::view::PickTarget::Bg)),
+                    "tools" => Some(super::view::Popover::Tools),
+                    "head-start" => Some(super::view::Popover::Head(true)),
+                    "head-end" => Some(super::view::Popover::Head(false)),
+                    "fonts" => Some(super::view::Popover::Fonts),
+                    _ => None,
+                };
+            }
+            "set" => match (parts.get(1).copied(), parts.get(2).copied()) {
+                (Some("arrowtype"), Some(k)) => {
+                    self.cur.arrow_type = if k == "elbow" {
+                        "elbow"
+                    } else if k == "sharp" {
+                        "sharp"
+                    } else {
+                        "round"
+                    }
+                }
+                (Some("bg"), Some(c)) => self.set_color(super::view::PickTarget::Bg, c, cx),
+                (Some("stroke"), Some(c)) => self.set_color(super::view::PickTarget::Stroke, c, cx),
+                (Some("fill"), Some(f)) => {
+                    let f = f.to_string();
+                    let f2 = f.clone();
+                    self.set_prop(move |s| s.fill = f.clone(), move |e| e.fill_style = f2.clone(), cx)
+                }
+                _ => {}
+            },
+            "lineedit" => self.toggle_line_edit(cx),
+            "crop" => self.toggle_crop(cx),
+            "image" => {
+                if let Some(p) = parts.get(1) {
+                    self.insert_image(p.to_string(), Some(v(n.first().copied().unwrap_or(0.), n.get(1).copied().unwrap_or(0.))), cx);
+                }
+            }
+            // 在正在编辑的文字框里输入
+            "type" => {
+                let text = parts.iter().skip(1).copied().collect::<Vec<_>>().join(" ");
+                if let Some(ed) = self.editing.as_ref() {
+                    let a = ed.area.clone();
+                    a.update(cx, |a, cx| a.insert(&text, cx));
+                }
+            }
+            "finish" => {
+                self.finish_edit(cx);
+                window.focus(&self.focus);
+            }
+            "mermaid" => self.open_mermaid(window, cx),
+            "mermaid-insert" => self.insert_mermaid(window, cx),
             _ => {}
         }
         cx.notify();

@@ -6159,6 +6159,7 @@ dependencies = [
  "serde_json",
  "smallvec",
  "symphonia",
+ "ttf-parser 0.25.1",
  "unicode-segmentation",
  "ureq",
  "uuid",

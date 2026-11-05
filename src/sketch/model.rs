@@ -16,6 +16,14 @@ pub const DEFAULT_FONT_SIZE: f64 = 20.;
 pub const DEFAULT_LINE_HEIGHT: f64 = 1.25;
 /// 手绘字体（官方 Excalifont）
 pub const FONT_HAND: i64 = 5;
+/// 便签（官方 stickynote，2026-09）
+pub const STICKY_BG: &str = "#ffdf6b";
+pub const STICKY_BGS: [&str; 5] = [STICKY_BG, "#fcc2d7", "#b2f2bb", "#a5d8ff", "#ffd8a8"];
+pub const STICKY_PADDING: f64 = 16.;
+pub const STICKY_FOOTER_H: f64 = 20.;
+pub const STICKY_MIN: f64 = 75.;
+pub const STICKY_SIZE: f64 = 250.;
+pub const STICKY_MIN_FONT: f64 = 16.;
 /// 常规字体（官方 Nunito）
 pub const FONT_NORMAL: i64 = 6;
 /// 代码字体（官方 Comic Shanns）
@@ -248,7 +256,7 @@ impl Element {
         e.set("boundElements", Value::Null);
         e.set("link", Value::Null);
         match kind {
-            "rectangle" => e.set("roundness", json!({ "type": 3 })),
+            "rectangle" | "stickynote" => e.set("roundness", json!({ "type": 3 })),
             "diamond" => e.set("roundness", json!({ "type": 2 })),
             "ellipse" | "freedraw" | "text" | "image" | "frame" => e.set("roundness", Value::Null),
             "arrow" | "line" => {
@@ -289,6 +297,16 @@ impl Element {
                 e.set("scale", json!([1, 1]));
                 e.set("crop", Value::Null);
             }
+            "stickynote" => {
+                e.background_color = STICKY_BG.into();
+                e.fill_style = "solid".into();
+                e.set("baseHeight", json!(0));
+                e.set("created", json!(now_ms()));
+            }
+            "embeddable" => {
+                e.set("roundness", json!({ "type": 3 }));
+                e.set("validated", json!(true));
+            }
             "frame" => {
                 e.set("name", Value::Null);
                 e.stroke_color = "#bbb".into();
@@ -322,11 +340,14 @@ impl Element {
     }
     /// 能放文字的容器
     pub fn is_container(&self) -> bool {
-        matches!(self.kind.as_str(), "rectangle" | "diamond" | "ellipse")
+        matches!(self.kind.as_str(), "rectangle" | "diamond" | "ellipse" | "stickynote")
+    }
+    pub fn is_sticky(&self) -> bool {
+        self.kind == "stickynote"
     }
     /// 能被箭头绑定
     pub fn is_bindable(&self) -> bool {
-        matches!(self.kind.as_str(), "rectangle" | "diamond" | "ellipse" | "text" | "image" | "frame" | "magicframe" | "iframe" | "embeddable")
+        matches!(self.kind.as_str(), "rectangle" | "diamond" | "ellipse" | "stickynote" | "text" | "image" | "frame" | "magicframe" | "iframe" | "embeddable")
     }
 
     pub fn has_fill(&self) -> bool {

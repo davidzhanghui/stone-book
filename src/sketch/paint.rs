@@ -91,13 +91,23 @@ pub fn paint_prims(prims: &[Prim], xf: &Xf, view: &View, window: &mut Window, cx
                     shaped.paint(point(xx, yy), px(line_h * view.scale), window, cx).ok();
                 }
             }
-            Prim::Image { w, h, path } => {
+            Prim::Image { w, h, path, radius, crop } => {
                 let c = view.p(xf.apply(pt(w / 2., h / 2.)));
                 let b = Bounds::new(point(c.x - px(w * view.scale / 2.), c.y - px(h * view.scale / 2.)), size(px(w * view.scale), px(h * view.scale)));
                 match path.as_deref().and_then(|p| crate::canvas::paint::load_image(p, window)) {
-                    Some(img) => {
-                        window.paint_image(b, Corners::default(), img, 0, false).ok();
-                    }
+                    Some(img) => match crop {
+                        // 裁剪：整张图按比例放大，再用内容遮罩只露出裁剪区
+                        Some([cx0, cy0, cw, ch, nw, nh]) => {
+                            let (sx, sy) = (w * view.scale / cw, h * view.scale / ch);
+                            let full = Bounds::new(point(b.origin.x - px(cx0 * sx), b.origin.y - px(cy0 * sy)), size(px(nw * sx), px(nh * sy)));
+                            window.with_content_mask(Some(ContentMask { bounds: b }), |window| {
+                                window.paint_image(full, Corners::default(), img, 0, false).ok();
+                            });
+                        }
+                        None => {
+                            window.paint_image(b, Corners::all(px(radius * view.scale)), img, 0, false).ok();
+                        }
+                    },
                     None => {
                         window.paint_quad(fill(b, gpui::hsla(0., 0., 0.5, 0.15)));
                     }

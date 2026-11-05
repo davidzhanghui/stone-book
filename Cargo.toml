@@ -42,6 +42,7 @@ roughr = "0.14"
 lyon_tessellation = "1.0"
 rstar = "0.12"
 resvg = "0.45"
+ttf-parser = "0.25"
 flate2 = "1"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 ironcalc = "0.9"

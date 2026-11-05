@@ -126,18 +126,32 @@ fn prim_svg(out: &mut String, doc: &SketchDoc, p: &Prim) {
                 .ok();
             }
         }
-        Prim::Image { w, h, path } => {
+        Prim::Image { w, h, path, radius, crop } => {
             let data = path.as_deref().and_then(|p| std::fs::read(p).ok().map(|b| (p.to_string(), b)));
             match data {
                 Some((p, bytes)) => {
                     use base64::Engine;
                     let mime = super::io::mime_of(&p);
-                    writeln!(
-                        out,
-                        "<image x=\"0\" y=\"0\" width=\"{w}\" height=\"{h}\" preserveAspectRatio=\"none\" href=\"data:{mime};base64,{}\"/>",
-                        base64::engine::general_purpose::STANDARD.encode(bytes)
-                    )
-                    .ok();
+                    let href = format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes));
+                    let clip = if *radius > 0. {
+                        let id = format!("ic{}", out.len());
+                        writeln!(out, "<clipPath id=\"{id}\"><rect width=\"{w}\" height=\"{h}\" rx=\"{radius}\"/></clipPath>").ok();
+                        format!(" clip-path=\"url(#{id})\"")
+                    } else {
+                        String::new()
+                    };
+                    match crop {
+                        Some([cx0, cy0, cw, ch, nw, nh]) => {
+                            writeln!(
+                                out,
+                                "<svg x=\"0\" y=\"0\" width=\"{w}\" height=\"{h}\" viewBox=\"{cx0} {cy0} {cw} {ch}\" preserveAspectRatio=\"none\"><image width=\"{nw}\" height=\"{nh}\" href=\"{href}\"/></svg>"
+                            )
+                            .ok();
+                        }
+                        None => {
+                            writeln!(out, "<image x=\"0\" y=\"0\" width=\"{w}\" height=\"{h}\" preserveAspectRatio=\"none\"{clip} href=\"{href}\"/>").ok();
+                        }
+                    }
                 }
                 None => {
                     let _ = doc;

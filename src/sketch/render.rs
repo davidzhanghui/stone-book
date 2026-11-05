@@ -49,6 +49,10 @@ pub enum Prim {
         w: f32,
         h: f32,
         path: Option<String>,
+        /// 圆角半径
+        radius: f32,
+        /// 裁剪：原图像素里的 (x, y, w, h) 与原图尺寸 (nw, nh)
+        crop: Option<[f32; 6]>,
     },
 }
 
@@ -507,7 +511,8 @@ fn prims_raw(doc: &SketchDoc, e: &Element, dark: bool) -> Vec<Prim> {
             }
         }
         "image" => {
-            out.push(Prim::Image { w: w as f32, h: h as f32, path: e.file_id().and_then(|f| doc.file_path(f)) });
+            let radius = if e.roundness().is_some() { corner_radius(e) as f32 } else { 0. };
+            out.push(Prim::Image { w: w as f32, h: h as f32, path: e.file_id().and_then(|f| doc.file_path(f)), radius, crop: image_crop(e) });
         }
         "frame" | "magicframe" => {
             let c = color(if e.stroke_color == DEFAULT_STROKE { "#bbb" } else { &e.stroke_color }, e.opacity, dark).unwrap_or(Col::rgb(0xbbbbbb));
@@ -529,6 +534,44 @@ fn prims_raw(doc: &SketchDoc, e: &Element, dark: bool) -> Vec<Prim> {
                 color: color("#868e96", 100., dark).unwrap(),
                 family: FONT_NORMAL,
                 align: 0,
+                bg: None,
+            });
+        }
+        "stickynote" => sticky_prims(&mut out, e, dark),
+        "embeddable" | "iframe" if e.link().is_some() => {
+            let link = e.link().unwrap_or_default().to_string();
+            let fillc = color(if dark { "#1e1e1e" } else { "#f8f9fa" }, e.opacity, false).unwrap();
+            let edge = color("#ced4da", e.opacity, dark).unwrap();
+            let r = corner_radius(e).min(16.) as f32;
+            let rect = crate::canvas::rect(0., 0., w as f32, h as f32);
+            out.push(Prim::Fill { cmds: crate::canvas::geom::round_rect_cmds(rect, r), color: fillc });
+            out.push(Prim::Stroke { cmds: crate::canvas::geom::round_rect_cmds(rect, r), color: edge, width: 1.5, dash: None, round: false });
+            let host = link.split("://").nth(1).unwrap_or(&link).split('/').next().unwrap_or("").to_string();
+            let short: String = if link.chars().count() > 60 { link.chars().take(57).chain("…".chars()).collect() } else { link.clone() };
+            let ink = color(DEFAULT_STROKE, e.opacity, dark).unwrap();
+            let muted = color("#868e96", e.opacity, dark).unwrap();
+            out.push(Prim::Text {
+                lines: vec![format!("🌐 {host}")],
+                x: 0.,
+                y: (h / 2. - 24.) as f32,
+                w: w as f32,
+                size: 18.,
+                line_h: 24.,
+                color: ink,
+                family: FONT_NORMAL,
+                align: 1,
+                bg: None,
+            });
+            out.push(Prim::Text {
+                lines: vec![short, "双击在浏览器中打开".into()],
+                x: 0.,
+                y: (h / 2. + 4.) as f32,
+                w: w as f32,
+                size: 12.,
+                line_h: 17.,
+                color: muted,
+                family: FONT_NORMAL,
+                align: 1,
                 bg: None,
             });
         }
@@ -561,6 +604,125 @@ fn prims_raw(doc: &SketchDoc, e: &Element, dark: bool) -> Vec<Prim> {
         }
     }
     out
+}
+
+/// 图片裁剪（官方 `crop`：原图像素坐标）
+fn image_crop(e: &Element) -> Option<[f32; 6]> {
+    let c = e.get("crop")?;
+    let g = |k: &str| c.get(k).and_then(|v| v.as_f64()).map(|v| v as f32);
+    let (x, y, w, h, nw, nh) = (g("x")?, g("y")?, g("width")?, g("height")?, g("naturalWidth")?, g("naturalHeight")?);
+    (w > 0. && h > 0. && nw > 0. && nh > 0.).then_some([x, y, w, h, nw, nh])
+}
+
+/// 便签纸面四角（官方 `getStickyNoteRenderPoints`：按粗糙度给角点一点抖动）
+fn sticky_points(e: &Element, off: f32, seed_off: i64) -> [Pt; 4] {
+    let (w, h) = (e.width as f32, e.height as f32);
+    let level = e.roughness.round().clamp(0., 2.) as usize;
+    let amount = [0f32, 1.5, 8.][level].min(w.min(h) * 0.012);
+    let mut st = (e.seed + seed_off).unsigned_abs() as u32 | 1;
+    let mut rnd = || {
+        st ^= st << 13;
+        st ^= st >> 17;
+        st ^= st << 5;
+        (st as f32 / u32::MAX as f32 - 0.5) * 2. * amount
+    };
+    [pt(off + rnd(), off + rnd()), pt(off + w + rnd(), off + rnd()), pt(off + w + rnd(), off + h + rnd()), pt(off + rnd(), off + h + rnd())]
+}
+
+fn toward(a: Pt, b: Pt, d: f32) -> Pt {
+    let l = a.dist(b).max(1e-6);
+    pt(a.x + (b.x - a.x) * d / l, a.y + (b.y - a.y) * d / l)
+}
+
+/// 二次贝塞尔转三次
+fn quad(from: Pt, ctrl: Pt, to: Pt) -> PathCmd {
+    let c1 = pt(from.x + (ctrl.x - from.x) * 2. / 3., from.y + (ctrl.y - from.y) * 2. / 3.);
+    let c2 = pt(to.x + (ctrl.x - to.x) * 2. / 3., to.y + (ctrl.y - to.y) * 2. / 3.);
+    PathCmd::Cubic(c1, c2, to)
+}
+
+/// 便签轮廓（官方 `getStickyNotePathCommands`）：圆角；「潦草」时随机一角微微翘起。
+fn sticky_path(e: &Element, shadow: bool) -> Vec<PathCmd> {
+    let off = if shadow { 3. } else { 0. };
+    let pts = sticky_points(e, off, if shadow { 1 } else { 0 });
+    let (w, h) = (e.width as f32, e.height as f32);
+    let radius = if e.roundness().is_some() { (w.min(h) * 0.04).min(16.) } else { 0. };
+    let lifted = if e.roughness >= 1.5 { (e.seed.unsigned_abs() % 4) as usize } else { 9 };
+    let mut segs: Vec<Vec<(Pt, Option<Pt>)>> = vec![]; // (终点, 控制点)
+    for i in 0..4 {
+        let (prev, p, next) = (pts[(i + 3) % 4], pts[i], pts[(i + 1) % 4]);
+        let r = radius.min(p.dist(prev) / 2.).min(p.dist(next) / 2.);
+        if i == lifted {
+            let size = w.min(h);
+            let reach = (size * 0.18).min(40.);
+            let lift = (size * 0.02).min(5.) * if shadow { 0.5 } else { 1. };
+            let tip = pt(p.x + if i == 1 || i == 2 { -lift } else { lift }, p.y + if i >= 2 { -lift } else { lift });
+            let start = toward(p, prev, reach);
+            let end = toward(p, next, reach);
+            segs.push(vec![
+                (start, None),
+                (toward(tip, start, r), Some(toward(p, prev, reach / 2.))),
+                (toward(tip, end, r), Some(tip)),
+                (end, Some(toward(p, next, reach / 2.))),
+            ]);
+        } else {
+            segs.push(vec![(toward(p, prev, r), None), (toward(p, next, r), Some(p))]);
+        }
+    }
+    let start = segs[0].last().unwrap().0;
+    let mut cmds = vec![PathCmd::Move(start)];
+    let mut cur = start;
+    for k in 1..=4 {
+        for (to, ctrl) in &segs[k % 4] {
+            cmds.push(match ctrl {
+                Some(c) => quad(cur, *c, *to),
+                None => PathCmd::Line(*to),
+            });
+            cur = *to;
+        }
+    }
+    cmds.push(PathCmd::Close);
+    cmds
+}
+
+const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/// 便签日期（官方 `getStickyNoteDateLabel`）：「5 Nov」，不是今年时带年份
+pub fn sticky_date(created: i64, short: bool) -> Option<String> {
+    let secs = created.div_euclid(1000);
+    let local = chrono::DateTime::from_timestamp(secs, 0)?.with_timezone(&chrono::Local);
+    use chrono::Datelike;
+    let label = format!("{} {}", local.day(), MONTHS[local.month0() as usize]);
+    let this_year = chrono::Local::now().year();
+    Some(if short || local.year() == this_year { label } else { format!("{label} {}", local.year()) })
+}
+
+fn sticky_prims(out: &mut Vec<Prim>, e: &Element, dark: bool) {
+    let bg = color(if e.has_fill() { &e.background_color } else { STICKY_BG }, e.opacity, dark).unwrap_or(Col::rgb(0xffdf6b));
+    let shadow = Col::rgb(0x000000).with_alpha(0.16 * e.opacity as f32 / 100.);
+    out.push(Prim::Fill { cmds: sticky_path(e, true), color: shadow });
+    let paper = sticky_path(e, false);
+    out.push(Prim::Fill { cmds: paper.clone(), color: bg });
+    out.push(Prim::Stroke { cmds: paper, color: Col::rgb(0x000000).with_alpha(0.08), width: 0.5, dash: None, round: false });
+    if e.width >= STICKY_MIN && e.height >= STICKY_MIN {
+        let created = e.get("created").and_then(|v| v.as_i64());
+        let short = e.width - STICKY_PADDING * 2. < 80.;
+        if let Some(label) = created.and_then(|c| sticky_date(c, short)) {
+            let ink = color(&e.stroke_color, e.opacity, dark).unwrap_or(Col::rgb(0x1e1e1e));
+            out.push(Prim::Text {
+                lines: vec![label],
+                x: 0.,
+                y: (e.height - 14. - 11.) as f32,
+                w: (e.width - STICKY_PADDING) as f32,
+                size: 12.,
+                line_h: 14.,
+                color: ink,
+                family: 2,
+                align: 2,
+                bg: None,
+            });
+        }
+    }
 }
 
 fn back_point(flat: &[V], end: bool) -> V {
@@ -633,7 +795,21 @@ fn shape_hash(doc: &SketchDoc, e: &Element, dark: bool) -> u64 {
     }
     e.text.hash(&mut h);
     e.font_size.map(|f| f.to_bits()).hash(&mut h);
-    for k in ["roundness", "fontFamily", "textAlign", "startArrowhead", "endArrowhead", "elbowed", "fileId", "name", "lineHeight", "containerId", "link"] {
+    for k in [
+        "roundness",
+        "fontFamily",
+        "textAlign",
+        "startArrowhead",
+        "endArrowhead",
+        "elbowed",
+        "fileId",
+        "name",
+        "lineHeight",
+        "containerId",
+        "link",
+        "crop",
+        "created",
+    ] {
         if let Some(v) = e.extra.get(k) {
             k.hash(&mut h);
             v.to_string().hash(&mut h);
@@ -678,7 +854,7 @@ pub fn font_family(f: i64) -> (&'static str, &'static str) {
         // Cascadia / Comic Shanns
         3 | 8 => ("Menlo", "Comic Shanns, Cascadia, Menlo, monospace"),
         // Virgil / Excalifont（手写）
-        _ => ("Chalkboard SE", "Excalifont, Virgil, Xiaolai, Chalkboard SE, Kaiti SC, cursive"),
+        _ => (super::fonts::HAND_FAMILY, "Stonebrook Sketch, Excalifont, Virgil, Xiaolai, Chalkboard SE, Kaiti SC, cursive"),
     }
 }
 

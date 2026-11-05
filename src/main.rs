@@ -323,6 +323,7 @@ fn main() {
     }
     Application::new().with_assets(ui::Assets).run(move |cx: &mut App| {
         cx.set_global(theme::Theme::light());
+        sketch::fonts::register(cx);
         bind_keys(cx);
         // 记下内置按键作为基准，再叠加用户在快捷键面板里改过的按键
         shortcuts::init(cx);

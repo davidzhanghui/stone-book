@@ -70,7 +70,13 @@ actions!(
         SToolText,
         SToolImage,
         SToolEraser,
-        SToolFrame
+        SToolFrame,
+        SToolSticky,
+        SToolLaser,
+        SToolBucket,
+        SToolShapeDraw,
+        SToolEmbed,
+        SLineEdit
     ]
 );
 
@@ -146,6 +152,11 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("e", SToolEraser, c),
         KeyBinding::new("0", SToolEraser, c),
         KeyBinding::new("f", SToolFrame, c),
+        KeyBinding::new("n", SToolSticky, c),
+        KeyBinding::new("k", SToolLaser, c),
+        KeyBinding::new("b", SToolBucket, c),
+        KeyBinding::new("shift-x", SToolShapeDraw, c),
+        KeyBinding::new("cmd-enter", SLineEdit, c),
     ]);
 }
 
@@ -163,6 +174,18 @@ pub enum Tool {
     Image,
     Eraser,
     Frame,
+    /// 便签（N）
+    Sticky,
+    /// 套索选择
+    Lasso,
+    /// 激光笔（K）：会消失的红色轨迹，不进文档
+    Laser,
+    /// 油漆桶（B）：点元素填色
+    Bucket,
+    /// 画完自动识别成形状（⇧X）
+    ShapeDraw,
+    /// 嵌入网页
+    Embed,
 }
 
 impl Tool {
@@ -181,6 +204,12 @@ impl Tool {
             "image" => Tool::Image,
             "eraser" => Tool::Eraser,
             "frame" => Tool::Frame,
+            "sticky" | "stickynote" | "note" => Tool::Sticky,
+            "lasso" => Tool::Lasso,
+            "laser" => Tool::Laser,
+            "bucket" => Tool::Bucket,
+            "shape" | "drawshape" => Tool::ShapeDraw,
+            "embed" | "embeddable" => Tool::Embed,
             _ => return None,
         })
     }
@@ -195,6 +224,9 @@ impl Tool {
             Tool::Text => "text",
             Tool::Image => "image",
             Tool::Frame => "frame",
+            Tool::Sticky => "stickynote",
+            Tool::ShapeDraw => "freedraw",
+            Tool::Embed => "embeddable",
             _ => return None,
         })
     }
@@ -216,6 +248,11 @@ pub struct ItemStyle {
     pub text_align: String,
     pub start_arrow: Option<String>,
     pub end_arrow: Option<String>,
+    /// 箭头类型：sharp / round / elbow
+    pub arrow_type: &'static str,
+    /// 便签自己的配色（官方 currentItemStickynote*）
+    pub sticky_bg: String,
+    pub sticky_ink: String,
 }
 
 impl Default for ItemStyle {
@@ -234,21 +271,66 @@ impl Default for ItemStyle {
             text_align: "left".into(),
             start_arrow: None,
             end_arrow: Some("arrow".into()),
+            arrow_type: "round",
+            sticky_bg: STICKY_BG.into(),
+            sticky_ink: DEFAULT_STROKE.into(),
         }
     }
 }
 
 pub(super) enum Drag {
-    Move { start: V, orig: Vec<(String, f64, f64)>, moved: bool },
-    Resize { handle: usize, orig: Vec<Element>, bounds: R, single: bool },
-    Rotate { center: V, start: f64, orig: Vec<Element> },
-    Create { id: String, start: V },
-    Linear { id: String, start: V },
-    Point { id: String, idx: usize },
-    Marquee { start: V, cur: V },
-    Pan { start: Point<Pixels>, orig: Pt },
-    Draw { id: String },
-    Erase { last: V },
+    Move {
+        start: V,
+        orig: Vec<(String, f64, f64)>,
+        moved: bool,
+    },
+    Resize {
+        handle: usize,
+        orig: Vec<Element>,
+        bounds: R,
+        single: bool,
+    },
+    Rotate {
+        center: V,
+        start: f64,
+        orig: Vec<Element>,
+    },
+    Create {
+        id: String,
+        start: V,
+    },
+    Linear {
+        id: String,
+        start: V,
+    },
+    Point {
+        id: String,
+        idx: usize,
+    },
+    Marquee {
+        start: V,
+        cur: V,
+    },
+    Pan {
+        start: Point<Pixels>,
+        orig: Pt,
+    },
+    Draw {
+        id: String,
+    },
+    Erase {
+        last: V,
+    },
+    Lasso {
+        pts: Vec<V>,
+    },
+    Laser,
+    Crop {
+        handle: usize,
+        orig: Element,
+    },
+    /// 拖透明度滑块
+    Slider,
 }
 
 /// 原位文字编辑
@@ -264,6 +346,44 @@ pub(super) struct Editing {
 pub enum Popover {
     Menu,
     Export,
+    /// 工具栏「更多工具」
+    Tools,
+    /// 颜色选择器
+    Color(PickTarget),
+    /// 起点 / 终点端点样式（true = 起点）
+    Head(bool),
+    /// 更多字体
+    Fonts,
+}
+
+/// 颜色选择器作用于哪种颜色
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PickTarget {
+    Stroke,
+    Bg,
+}
+
+/// 浮动输入：链接 / 嵌入网页地址 / 十六进制颜色
+pub(super) struct InputPrompt {
+    pub kind: PromptKind,
+    pub input: Entity<crate::line_input::LineInput>,
+    pub _sub: Subscription,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(super) enum PromptKind {
+    /// 元素链接
+    Link(Vec<String>),
+    /// 嵌入网页地址（新建的 embeddable）
+    Embed(String),
+    /// 颜色选择器里的十六进制
+    Hex(PickTarget),
+}
+
+/// Mermaid 至草图对话框
+pub(super) struct MermaidDlg {
+    pub area: Entity<TextArea>,
+    pub error: Option<String>,
 }
 
 pub enum SketchEvent {
@@ -305,6 +425,23 @@ pub struct SketchEditor {
     pub(super) toast_gen: u64,
     /// 悬停的缩放 / 旋转手柄（光标形状用）
     pub(super) hover_handle: Option<usize>,
+    /// 线编辑模式：显示全部节点与中点，可增删节点
+    pub(super) line_edit: Option<String>,
+    /// 线编辑模式里选中的节点
+    pub(super) line_pt: Option<usize>,
+    /// 图片裁剪模式
+    pub(super) crop_edit: Option<String>,
+    /// 激光笔轨迹（世界坐标 + 时刻），约 1 秒后淡出
+    pub(super) laser: Vec<(V, std::time::Instant)>,
+    pub(super) laser_anim: bool,
+    /// 吸管：下一次点画布取色
+    pub(super) eyedropper: Option<PickTarget>,
+    pub(super) prompt: Option<InputPrompt>,
+    pub(super) mermaid: Option<MermaidDlg>,
+    /// 透明度滑块轨道位置（窗口坐标）
+    pub(super) slider_bounds: Bounds<Pixels>,
+    /// 颜色选择器里展示的色阶（0..5），None = 按当前颜色推断
+    pub(super) shade: Option<usize>,
 }
 
 impl Focusable for SketchEditor {
@@ -344,6 +481,16 @@ impl SketchEditor {
             toast: None,
             toast_gen: 0,
             hover_handle: None,
+            line_edit: None,
+            line_pt: None,
+            crop_edit: None,
+            laser: vec![],
+            laser_anim: false,
+            eyedropper: None,
+            prompt: None,
+            mermaid: None,
+            slider_bounds: Bounds::default(),
+            shade: None,
         }
     }
 
@@ -408,7 +555,11 @@ impl SketchEditor {
             self.finish_linear(&id, cx);
         }
         self.tool = t;
-        if t != Tool::Select {
+        self.line_edit = None;
+        self.line_pt = None;
+        self.crop_edit = None;
+        self.eyedropper = None;
+        if !matches!(t, Tool::Select | Tool::Lasso) {
             self.sel.clear();
         }
         self.popover = None;
@@ -557,6 +708,16 @@ pub(super) struct Overlay {
     pub bind_round: bool,
     pub accent: Hsla,
     pub bg: Hsla,
+    /// 线段中点（拖动可弯曲 / 加点）
+    pub mids: Vec<V>,
+    /// 线编辑里选中的节点
+    pub sel_pt: Option<V>,
+    /// 套索路径
+    pub lasso: Vec<V>,
+    /// 裁剪模式：整张原图的轮廓
+    pub crop_full: Option<[V; 4]>,
+    /// 激光笔轨迹（点 + 剩余不透明度）
+    pub laser: Vec<(V, f32)>,
 }
 
 impl Overlay {
@@ -606,6 +767,51 @@ impl Overlay {
             let b = Bounds::new(point(c.x - px(5.), c.y - px(5.)), size(px(10.), px(10.)));
             window.paint_quad(fill(b, self.bg).corner_radii(px(5.)).border_widths(px(1.5)).border_color(self.accent));
         }
+        for m in &self.mids {
+            let c = sp(*m);
+            let b = Bounds::new(point(c.x - px(4.), c.y - px(4.)), size(px(8.), px(8.)));
+            window.paint_quad(fill(b, self.accent.opacity(0.45)).corner_radii(px(4.)));
+        }
+        if let Some(p) = self.sel_pt {
+            let c = sp(p);
+            let b = Bounds::new(point(c.x - px(8.), c.y - px(8.)), size(px(16.), px(16.)));
+            window.paint_quad(fill(b, self.accent.opacity(0.25)).corner_radii(px(8.)));
+        }
+        if let Some(q) = &self.crop_full {
+            let mut b = PathBuilder::stroke(px(1.)).dash_array(&[px(5.), px(4.)]);
+            b.move_to(sp(q[0]));
+            for p in &q[1..] {
+                b.line_to(sp(*p));
+            }
+            b.close();
+            if let Ok(p) = b.build() {
+                window.paint_path(p, self.accent.opacity(0.8));
+            }
+        }
+        if self.lasso.len() >= 2 {
+            let mut b = PathBuilder::stroke(px(1.)).dash_array(&[px(4.), px(3.)]);
+            b.move_to(sp(self.lasso[0]));
+            for p in &self.lasso[1..] {
+                b.line_to(sp(*p));
+            }
+            if let Ok(p) = b.build() {
+                window.paint_path(p, self.accent);
+            }
+        }
+        // 激光笔：越早的点越淡、越细
+        for w in self.laser.windows(2) {
+            let (a, b) = (w[0], w[1]);
+            let alpha = a.1.min(b.1);
+            if alpha <= 0.02 {
+                continue;
+            }
+            let mut pb = PathBuilder::stroke(px(1.5 + 3.5 * alpha));
+            pb.move_to(sp(a.0));
+            pb.line_to(sp(b.0));
+            if let Ok(p) = pb.build() {
+                window.paint_path(p, hsla(0., 0.95, 0.55, alpha));
+            }
+        }
         if let Some(r) = self.marquee {
             let a = sp(v(r.x0, r.y0));
             let b = sp(v(r.x1, r.y1));
@@ -635,7 +841,10 @@ impl Render for SketchEditor {
             (Some(Drag::Pan { .. }), _) => CursorStyle::ClosedHand,
             _ if self.space_down => CursorStyle::OpenHand,
             (_, Tool::Hand) => CursorStyle::OpenHand,
+            _ if self.eyedropper.is_some() => CursorStyle::Crosshair,
             (_, Tool::Text) => CursorStyle::IBeam,
+            (_, Tool::Bucket) => CursorStyle::PointingHand,
+            (_, Tool::Lasso) => CursorStyle::Arrow,
             (_, Tool::Select) => match self.hover_handle {
                 Some(0) | Some(4) => CursorStyle::ResizeUpLeftDownRight,
                 Some(2) | Some(6) => CursorStyle::ResizeUpRightDownLeft,
@@ -647,10 +856,19 @@ impl Render for SketchEditor {
             _ => CursorStyle::Crosshair,
         };
         let editing = self.editing.is_some();
+        let typing = editing || self.prompt.is_some() || self.mermaid.is_some();
+        let picking = matches!(self.popover, Some(Popover::Color(_)));
         let empty = self.doc.is_empty();
         div()
-            // 编辑文字时换按键上下文：单字母工具快捷键不抢输入法的按键
-            .key_context(if editing { "SketchText" } else { "Sketch" })
+            // 编辑文字 / 输入框时换按键上下文：单字母工具快捷键不抢输入法的按键；
+            // 颜色选择器打开时字母键用来选色
+            .key_context(if typing {
+                "SketchText"
+            } else if picking {
+                "SketchPicker"
+            } else {
+                "Sketch"
+            })
             .track_focus(&self.focus)
             .size_full()
             .relative()
@@ -715,7 +933,17 @@ impl Render for SketchEditor {
             .on_action(cx.listener(|this, _: &SToolImage, w, cx| this.set_tool(Tool::Image, w, cx)))
             .on_action(cx.listener(|this, _: &SToolEraser, w, cx| this.set_tool(Tool::Eraser, w, cx)))
             .on_action(cx.listener(|this, _: &SToolFrame, w, cx| this.set_tool(Tool::Frame, w, cx)))
+            .on_action(cx.listener(|this, _: &SToolSticky, w, cx| this.set_tool(Tool::Sticky, w, cx)))
+            .on_action(cx.listener(|this, _: &SToolLaser, w, cx| this.set_tool(Tool::Laser, w, cx)))
+            .on_action(cx.listener(|this, _: &SToolBucket, w, cx| this.set_tool(Tool::Bucket, w, cx)))
+            .on_action(cx.listener(|this, _: &SToolShapeDraw, w, cx| this.set_tool(Tool::ShapeDraw, w, cx)))
+            .on_action(cx.listener(|this, _: &SToolEmbed, w, cx| this.set_tool(Tool::Embed, w, cx)))
+            .on_action(cx.listener(|this, _: &SLineEdit, _, cx| this.toggle_line_edit(cx)))
             .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _, cx| {
+                if this.picker_key(ev, cx) {
+                    cx.stop_propagation();
+                    return;
+                }
                 if ev.keystroke.key == "space" && !this.space_down && this.editing.is_none() {
                     this.space_down = true;
                     cx.notify();
@@ -794,12 +1022,12 @@ impl Render for SketchEditor {
                             .items_center()
                             .gap(px(10.))
                             .text_color(t.text_muted)
-                            .child(div().text_size(px(18.)).child("选择工具开始画，或双击写字"))
+                            .child(div().text_size(px(18.)).font_family(super::fonts::HAND_FAMILY).child("选择工具开始画，或双击写字"))
                             .child(
                                 div()
                                     .text_size(px(12.5))
                                     .opacity(0.85)
-                                    .child("R 矩形 · D 菱形 · O 椭圆 · A 箭头 · L 直线 · P 画笔 · T 文本 · I 图片 · F 框架 · E 橡皮"),
+                                    .child("R 矩形 · D 菱形 · O 椭圆 · A 箭头 · L 直线 · P 画笔 · T 文本 · N 便签 · E 橡皮 · K 激光笔"),
                             )
                             .child(div().text_size(px(12.5)).opacity(0.85).child("⌘O 打开 .excalidraw · ⌘V 粘贴官网复制的图形")),
                     ),
@@ -812,6 +1040,8 @@ impl Render for SketchEditor {
             .child(self.render_zoombar(&t, cx))
             .children(self.render_popover(&t, cx))
             .children(self.render_menu(&t, cx))
+            .children(self.render_prompt(&t, cx))
+            .children(self.render_mermaid(&t, cx))
             .children(self.render_toast(&t))
     }
 }
@@ -829,10 +1059,20 @@ impl SketchEditor {
             bind_round: false,
             accent: t.accent,
             bg: t.bg,
+            mids: vec![],
+            sel_pt: None,
+            lasso: vec![],
+            crop_full: None,
+            laser: vec![],
         };
         if let Some(Drag::Marquee { start, cur }) = &self.drag {
             o.marquee = R::from_pts([*start, *cur]);
         }
+        if let Some(Drag::Lasso { pts }) = &self.drag {
+            o.lasso = pts.clone();
+        }
+        let now = std::time::Instant::now();
+        o.laser = self.laser.iter().map(|(p, t0)| (*p, 1. - now.duration_since(*t0).as_millis() as f32 / super::tools::LASER_MS as f32)).collect();
         if let Some(e) = self.bind_hint.as_ref().and_then(|id| self.doc.get(id)) {
             let pad = 4.;
             let mut e2 = e.clone();
@@ -852,20 +1092,45 @@ impl SketchEditor {
             return o;
         }
         if let Some(e) = self.single() {
-            if (e.is_linear()) && e.pts().len() >= 2 {
-                o.points = geom::world_points(e);
-                if e.pts().len() > 2 {
+            if self.crop_edit.as_deref() == Some(e.id.as_str()) {
+                let q = geom::corners(e);
+                o.sel_boxes.push(q);
+                o.crop_full = Some(self.crop_full_quad(e));
+                o.handles = handles_of(&q);
+                return o;
+            }
+            if e.is_linear() && e.pts().len() >= 2 {
+                let pts = geom::world_points(e);
+                let n = pts.len();
+                let editing = self.line_edit.as_deref() == Some(e.id.as_str());
+                if e.elbowed() {
+                    o.points = vec![pts[0], pts[n - 1]];
                     let r = geom::bounds(e).inflate(pad);
                     o.sel_boxes.push([v(r.x0, r.y0), v(r.x1, r.y0), v(r.x1, r.y1), v(r.x0, r.y1)]);
+                    return o;
                 }
-                return o;
+                if n > 2 && !editing {
+                    // 多点线：外框可缩放旋转，同时显示节点（可直接拖）
+                    o.points = pts.clone();
+                } else if n == 2 || editing {
+                    if editing {
+                        let r = geom::bounds(e).inflate(pad);
+                        o.sel_boxes.push([v(r.x0, r.y0), v(r.x1, r.y0), v(r.x1, r.y1), v(r.x0, r.y1)]);
+                        o.sel_pt = self.line_pt.and_then(|i| pts.get(i).copied());
+                    }
+                    if !e.locked {
+                        o.mids = geom::segment_mids(e);
+                    }
+                    o.points = pts;
+                    return o;
+                }
             }
             let mut e2 = e.clone();
             e2.x -= pad;
             e2.y -= pad;
             e2.width += pad * 2.;
             e2.height += pad * 2.;
-            if e.kind == "freedraw" {
+            if e.kind == "freedraw" || e.is_linear() {
                 let r = geom::bounds(e).inflate(pad);
                 e2.x = r.x0;
                 e2.y = r.y0;

@@ -26,8 +26,16 @@ fn norm_angle(a: f64) -> f64 {
 impl SketchEditor {
     pub(super) fn mouse_down(&mut self, ev: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         window.focus(&self.focus);
+        // 焦点由我们自己管：不让外层容器在冒泡阶段把焦点抢回去（否则新建文字后的输入框拿不到焦点）
+        window.prevent_default();
         self.menu = None;
         self.popover = None;
+        self.prompt = None;
+        if let Some(target) = self.eyedropper.take() {
+            let w = self.to_world(ev.position);
+            self.pick_color_at(w, target, cx);
+            return;
+        }
         if ev.button == MouseButton::Middle || self.space_down || self.tool == Tool::Hand {
             self.drag = Some(Drag::Pan { start: ev.position, orig: self.offset });
             cx.notify();
@@ -51,7 +59,7 @@ impl SketchEditor {
         cx.notify();
     }
 
-    pub(super) fn mouse_move(&mut self, ev: &MouseMoveEvent, _: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn mouse_move(&mut self, ev: &MouseMoveEvent, window: &mut Window, cx: &mut Context<Self>) {
         let w = self.to_world(ev.position);
         self.mouse_world = w;
         if let Some(Drag::Pan { start, orig }) = &self.drag {
@@ -63,7 +71,7 @@ impl SketchEditor {
         if self.drag.is_some() {
             if ev.pressed_button.is_none() {
                 // 松开发生在窗口外：按松开处理
-                self.release(w, ev.modifiers.shift, cx);
+                self.release(w, ev.modifiers.shift, window, cx);
                 return;
             }
             self.drag_to(w, ev.modifiers.shift, ev.modifiers.alt, cx);
@@ -81,14 +89,14 @@ impl SketchEditor {
         }
     }
 
-    pub(super) fn mouse_up(&mut self, ev: &MouseUpEvent, _: &mut Window, cx: &mut Context<Self>) {
-        if matches!(self.drag, Some(Drag::Pan { .. })) {
+    pub(super) fn mouse_up(&mut self, ev: &MouseUpEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if matches!(self.drag, Some(Drag::Pan { .. }) | Some(Drag::Slider)) {
             self.drag = None;
             cx.notify();
             return;
         }
         let w = self.to_world(ev.position);
-        self.release(w, ev.modifiers.shift, cx);
+        self.release(w, ev.modifiers.shift, window, cx);
     }
 
     pub(super) fn scroll(&mut self, ev: &ScrollWheelEvent, _: &mut Window, cx: &mut Context<Self>) {
@@ -118,10 +126,29 @@ impl SketchEditor {
             if e.locked {
                 return None;
             }
-            if e.is_linear() && e.pts().len() >= 2 {
-                return geom::world_points(e).iter().position(|q| q.dist(p) <= tol).map(|i| 100 + i);
+            if self.crop_edit.as_deref() == Some(e.id.as_str()) {
+                let q = geom::corners(e);
+                return handles_of(&q).iter().position(|h| h.dist(p) <= tol).map(|i| 300 + i);
             }
-            if e.kind != "freedraw" {
+            if e.is_linear() && e.pts().len() >= 2 {
+                let pts = geom::world_points(e);
+                let n = pts.len();
+                if e.elbowed() {
+                    return [0, n - 1].into_iter().find(|&i| pts[i].dist(p) <= tol).map(|i| 100 + i);
+                }
+                if n > 2 && self.line_edit.as_deref() != Some(e.id.as_str()) {
+                    if let Some(i) = pts.iter().position(|q| q.dist(p) <= tol) {
+                        return Some(100 + i);
+                    }
+                }
+                if n == 2 || self.line_edit.as_deref() == Some(e.id.as_str()) {
+                    if let Some(i) = pts.iter().position(|q| q.dist(p) <= tol) {
+                        return Some(100 + i);
+                    }
+                    return geom::segment_mids(e).iter().position(|q| q.dist(p) <= tol).map(|i| 200 + i);
+                }
+            }
+            if e.kind != "freedraw" && !e.is_linear() {
                 let mut e2 = e.clone();
                 e2.x -= pad;
                 e2.y -= pad;
@@ -152,7 +179,7 @@ impl SketchEditor {
         match self.tool {
             Tool::Select => self.press_select(w, shift, alt, clicks, window, cx),
             Tool::Hand => {}
-            Tool::Rect | Tool::Diamond | Tool::Ellipse | Tool::Frame => {
+            Tool::Rect | Tool::Diamond | Tool::Ellipse | Tool::Frame | Tool::Sticky | Tool::Embed => {
                 self.snapshot();
                 let p = self.snap(w);
                 let mut e = Element::new(self.tool.kind().unwrap(), p.x, p.y);
@@ -204,7 +231,19 @@ impl SketchEditor {
                 self.sel.clear();
                 self.drag = Some(Drag::Linear { id, start: p });
             }
-            Tool::Draw => {
+            Tool::Lasso => {
+                if !shift {
+                    self.sel.clear();
+                }
+                self.drag = Some(Drag::Lasso { pts: vec![w] });
+            }
+            Tool::Laser => {
+                self.laser.push((w, std::time::Instant::now()));
+                self.drag = Some(Drag::Laser);
+                self.start_laser_anim(cx);
+            }
+            Tool::Bucket => self.bucket_at(w, cx),
+            Tool::Draw | Tool::ShapeDraw => {
                 self.snapshot();
                 let mut e = Element::new("freedraw", w.x, w.y);
                 self.apply_cur(&mut e);
@@ -236,9 +275,49 @@ impl SketchEditor {
     fn press_select(&mut self, w: V, shift: bool, alt: bool, clicks: usize, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(h) = self.handle_at(w).filter(|_| !shift) {
             self.snapshot();
-            if h >= 100 {
-                let id = self.sel.iter().next().cloned().unwrap();
+            let id = self.sel.iter().next().cloned().unwrap_or_default();
+            if h >= 300 {
+                if let Some(orig) = self.doc.get(&id).cloned() {
+                    self.drag = Some(Drag::Crop { handle: h - 300, orig });
+                }
+                return;
+            }
+            if h >= 200 {
+                // 拖段中点：在这里插入一个新节点并拖它（把线弯过去）
                 self.bake_rotation(&id);
+                let mids = self.doc.get(&id).map(geom::segment_mids).unwrap_or_default();
+                let Some(m) = mids.get(h - 200).copied() else { return };
+                if let Some(e) = self.doc.get_mut(&id) {
+                    let rel = [m.x - e.x, m.y - e.y];
+                    if let Some(p) = e.points.as_mut() {
+                        p.insert(h - 200 + 1, rel);
+                    }
+                    e.bump();
+                }
+                self.line_pt = Some(h - 200 + 1);
+                self.drag = Some(Drag::Point { id, idx: h - 200 + 1 });
+                return;
+            }
+            if h >= 100 {
+                self.bake_rotation(&id);
+                let elbow = self.doc.get(&id).is_some_and(|e| e.elbowed());
+                let n = self.doc.get(&id).map(|e| e.pts().len()).unwrap_or(0);
+                if elbow {
+                    // 折线箭头拖端点：先解开这一端，走线跟着鼠标重算
+                    let start = h == 100;
+                    let idx = if start { 0 } else { n.saturating_sub(1) };
+                    if let Some(b) = self.doc.get(&id).and_then(|e| e.binding(start)) {
+                        if let Some(t) = self.doc.get_mut(&b.element_id) {
+                            t.remove_bound(&id);
+                        }
+                        if let Some(e) = self.doc.get_mut(&id) {
+                            e.set_binding(start, None);
+                        }
+                    }
+                    self.drag = Some(Drag::Point { id, idx });
+                    return;
+                }
+                self.line_pt = Some(h - 100);
                 self.drag = Some(Drag::Point { id, idx: h - 100 });
                 return;
             }
@@ -254,7 +333,16 @@ impl SketchEditor {
             }
             return;
         }
-        match self.hit_at(w) {
+        let hit = self.hit_at(w);
+        // 点到别处：退出线编辑 / 裁剪
+        if self.line_edit.is_some() && self.line_edit != hit {
+            self.line_edit = None;
+            self.line_pt = None;
+        }
+        if self.crop_edit.is_some() && self.crop_edit != hit {
+            self.crop_edit = None;
+        }
+        match hit {
             Some(id) => {
                 if clicks >= 2 {
                     self.double_click(&id, w, window, cx);
@@ -305,8 +393,20 @@ impl SketchEditor {
         }
         if e.is_text() {
             self.start_text_edit(id, window, cx);
+        } else if e.kind == "line" {
+            // 直线：双击进入线编辑（官方行为）；箭头：双击写标签
+            self.line_edit = Some(id.to_string());
+            self.line_pt = None;
+            self.sel = [id.to_string()].into_iter().collect();
         } else if e.is_container() || e.is_linear() {
             self.edit_bound_text(id, window, cx);
+        } else if e.kind == "image" {
+            self.toggle_crop(cx);
+        } else if matches!(e.kind.as_str(), "embeddable" | "iframe") {
+            match e.link() {
+                Some(l) => cx.open_url(l),
+                None => self.open_prompt(PromptKind::Embed(id.to_string()), "", window, cx),
+            }
         } else if e.is_frame() {
             self.start_frame_name_edit(id, window, cx);
         } else {
@@ -442,7 +542,9 @@ impl SketchEditor {
             }
             Drag::Create { id, start } => {
                 let mut p = self.snap(w);
-                if shift {
+                // 便签默认等比（⇧ 放开）；其他形状 ⇧ 等比
+                let sticky = self.doc.get(&id).is_some_and(|e| e.is_sticky());
+                if shift != sticky {
                     let (dx, dy) = (p.x - start.x, p.y - start.y);
                     let s = dx.abs().max(dy.abs());
                     p = v(start.x + s * dx.signum(), start.y + s * dy.signum());
@@ -466,7 +568,33 @@ impl SketchEditor {
                 }
                 let is_arrow = self.doc.get(&id).is_some_and(|e| e.kind == "arrow");
                 self.bind_hint = if is_arrow { self.bind_target(p, &id) } else { None };
-                if let Some(e) = self.doc.get_mut(&id) {
+                let elbow = self.doc.get(&id).is_some_and(|e| e.elbowed());
+                if elbow {
+                    // 折线箭头：起点（可能吸在形状边上）到鼠标走正交线
+                    let st = self.doc.get(&id).and_then(|e| e.binding(true)).and_then(|b| self.doc.get(&b.element_id).cloned());
+                    let (a, ha) = match &st {
+                        Some(t) => {
+                            let (q, h) = geom::elbow_side_point(t, p, 4.);
+                            (q, Some(h))
+                        }
+                        None => (start, None),
+                    };
+                    let (b, hb) = match self.bind_hint.as_ref().and_then(|t| self.doc.get(t)) {
+                        Some(t) => {
+                            let (q, h) = geom::elbow_side_point(t, a, 4.);
+                            (q, Some(h))
+                        }
+                        None => (p, None),
+                    };
+                    let route = geom::elbow_route(a, ha, b, hb);
+                    if let Some(e) = self.doc.get_mut(&id) {
+                        e.x = route[0].x;
+                        e.y = route[0].y;
+                        e.points = Some(route.iter().map(|q| [q.x - route[0].x, q.y - route[0].y]).collect());
+                        e.normalize_points();
+                        e.bump();
+                    }
+                } else if let Some(e) = self.doc.get_mut(&id) {
                     let rel = [p.x - e.x, p.y - e.y];
                     if let Some(l) = e.points.as_mut().and_then(|p| p.last_mut()) {
                         *l = rel;
@@ -480,7 +608,37 @@ impl SketchEditor {
                 let (n, is_arrow) = self.doc.get(&id).map(|e| (e.pts().len(), e.kind == "arrow")).unwrap_or((0, false));
                 let endpoint = idx == 0 || idx + 1 == n;
                 self.bind_hint = if is_arrow && endpoint { self.bind_target(p, &id) } else { None };
-                if let Some(e) = self.doc.get_mut(&id) {
+                let elbow = self.doc.get(&id).is_some_and(|e| e.elbowed());
+                if elbow {
+                    let pts = self.doc.get(&id).map(geom::world_points).unwrap_or_default();
+                    if pts.len() >= 2 {
+                        let (a, b) = if idx == 0 { (p, pts[pts.len() - 1]) } else { (pts[0], p) };
+                        let other = self.doc.get(&id).and_then(|e| e.binding(idx != 0)).and_then(|b| self.doc.get(&b.element_id).cloned());
+                        let hint = self.bind_hint.as_ref().and_then(|t| self.doc.get(t)).cloned();
+                        let side = |t: &Element, toward: V| {
+                            let (q, h) = geom::elbow_side_point(t, toward, 4.);
+                            (q, Some(h))
+                        };
+                        let (a, ha) = match (idx == 0, &hint, &other) {
+                            (true, Some(t), _) => side(t, b),
+                            (false, _, Some(t)) => side(t, b),
+                            _ => (a, None),
+                        };
+                        let (b, hb) = match (idx == 0, &hint, &other) {
+                            (false, Some(t), _) => side(t, a),
+                            (true, _, Some(t)) => side(t, a),
+                            _ => (b, None),
+                        };
+                        let route = geom::elbow_route(a, ha, b, hb);
+                        if let Some(e) = self.doc.get_mut(&id) {
+                            e.x = route[0].x;
+                            e.y = route[0].y;
+                            e.points = Some(route.iter().map(|q| [q.x - route[0].x, q.y - route[0].y]).collect());
+                            e.normalize_points();
+                            e.bump();
+                        }
+                    }
+                } else if let Some(e) = self.doc.get_mut(&id) {
                     let mut pts = geom::abs_points(e);
                     if idx < pts.len() {
                         pts[idx] = p;
@@ -492,6 +650,16 @@ impl SketchEditor {
                     }
                 }
                 geom::layout_bound_text(&mut self.doc, &id);
+                // 以拖动后的末端为准：idx 可能因为折线重算而变
+                let idx = if elbow {
+                    if idx == 0 {
+                        0
+                    } else {
+                        self.doc.get(&id).map(|e| e.pts().len().saturating_sub(1)).unwrap_or(idx)
+                    }
+                } else {
+                    idx
+                };
                 Drag::Point { id, idx }
             }
             Drag::Marquee { start, .. } => Drag::Marquee { start, cur: w },
@@ -512,6 +680,21 @@ impl SketchEditor {
                 self.erase_at(last, w);
                 Drag::Erase { last: w }
             }
+            Drag::Lasso { mut pts } => {
+                if pts.last().is_none_or(|l| l.dist(w) * zoom > 2.) {
+                    pts.push(w);
+                }
+                Drag::Lasso { pts }
+            }
+            Drag::Laser => {
+                self.laser.push((w, std::time::Instant::now()));
+                Drag::Laser
+            }
+            Drag::Crop { handle, orig } => {
+                self.crop_drag(handle, &orig, w);
+                Drag::Crop { handle, orig }
+            }
+            Drag::Slider => Drag::Slider,
         };
         self.drag = Some(drag);
         cx.notify();
@@ -554,7 +737,9 @@ impl SketchEditor {
                 6 => (x0, y1) = (q.x, q.y),
                 _ => x0 = q.x,
             }
-            let keep = shift || o.kind == "image" || o.is_text();
+            // 便签：拖角默认等比（⇧ 放开），拖边自由（⇧ 等比）
+            let corner = matches!(h, 0 | 2 | 4 | 6);
+            let keep = if o.is_sticky() { shift != corner } else { shift || o.kind == "image" || o.is_text() };
             if keep && o.width > 0. && o.height > 0. {
                 let ratio = o.width / o.height;
                 let (nw, nh) = ((x1 - x0).abs(), (y1 - y0).abs());
@@ -600,7 +785,22 @@ impl SketchEditor {
                 };
             }
             let nr = R::from_pts([v(x0, y0), v(x1, y1)]).unwrap();
-            let (nw, nh) = (nr.w().max(1.), nr.h().max(1.));
+            let (nw, nh) = if o.is_sticky() { (nr.w().max(STICKY_MIN), nr.h().max(STICKY_MIN)) } else { (nr.w().max(1.), nr.h().max(1.)) };
+            if o.is_sticky() {
+                // 拖宽度不改用户高度；拖高度 / 等比时以新高度为基准；等比还按比例缩放字号上限
+                let base0 = o.get("baseHeight").and_then(|v| v.as_f64()).filter(|h| *h > 0.).unwrap_or(o.height);
+                let base = if matches!(h, 3 | 7) && !keep { base0 } else { nh };
+                // 等比：字号上限跟着宽度按比例变（相对上一帧，逐帧连乘等于相对起点）
+                let cur_w = self.doc.get(&o.id).map(|e| e.width).unwrap_or(o.width);
+                let scale = if keep && cur_w > 0. { nw / cur_w } else { 1. };
+                if let Some(te) = o.bound_text_id().and_then(|t| self.doc.get_mut(&t)) {
+                    let f = te.get("baseFontSize").and_then(|v| v.as_f64()).unwrap_or(te.font_size_or());
+                    te.set("baseFontSize", serde_json::json!((f * scale).clamp(4., 512.)));
+                }
+                if let Some(e) = self.doc.get_mut(&o.id) {
+                    e.set("baseHeight", serde_json::json!(base));
+                }
+            }
             let wc = nr.center().rot(a, c0);
             if let Some(e) = self.doc.get_mut(&o.id) {
                 e.x = wc.x - nw / 2.;
@@ -700,9 +900,12 @@ impl SketchEditor {
 
     // ───────────── 松开 ─────────────
 
-    pub fn release(&mut self, w: V, _shift: bool, cx: &mut Context<Self>) {
+    pub fn release(&mut self, w: V, _shift: bool, window: &mut Window, cx: &mut Context<Self>) {
         let Some(drag) = self.drag.take() else { return };
         match drag {
+            Drag::Create { id, start } if self.doc.get(&id).is_some_and(|e| e.is_sticky() || e.kind == "embeddable") => {
+                self.finish_special_create(&id, start, window, cx);
+            }
             Drag::Create { id, .. } => {
                 let tiny = self.doc.get(&id).is_none_or(|e| e.width < 2. && e.height < 2.);
                 if tiny {
@@ -740,6 +943,9 @@ impl SketchEditor {
                 if self.doc.get(&id).is_some_and(|e| e.kind == "arrow") && (idx == 0 || idx + 1 == n) {
                     self.rebind(&id, idx == 0);
                 }
+                if let Some(i) = self.doc.index(&id).filter(|&i| self.doc.elements[i].elbowed()) {
+                    geom::reroute_elbow(&mut self.doc, i);
+                }
                 self.bind_hint = None;
                 self.commit(cx);
             }
@@ -773,9 +979,17 @@ impl SketchEditor {
                     let last = e.pts().last().copied();
                     e.set("lastCommittedPoint", last.map(|p| serde_json::json!(p)).unwrap_or(serde_json::Value::Null));
                 }
+                // 「画完识别形状」：手绘笔迹换成矩形 / 椭圆 / 菱形 / 直线 / 箭头
+                let id = if self.tool == Tool::ShapeDraw { self.recognize_stroke(&id).unwrap_or(id) } else { id };
                 self.update_frame_membership(std::slice::from_ref(&id));
+                if self.tool == Tool::ShapeDraw && self.doc.get(&id).is_some_and(|e| e.kind != "freedraw") {
+                    self.sel = [id].into_iter().collect();
+                }
                 self.commit(cx);
             }
+            Drag::Lasso { pts } => self.lasso_select(&pts),
+            Drag::Laser | Drag::Slider => {}
+            Drag::Crop { .. } => self.commit(cx),
             Drag::Erase { .. } => {
                 if !self.erase.is_empty() {
                     self.snapshot();
