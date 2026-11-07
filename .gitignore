@@ -6,3 +6,5 @@ image.png
 *.log
 .venv/
 __pycache__/
+.wrangler/
+.dev.vars
