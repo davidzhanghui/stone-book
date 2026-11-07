@@ -13,6 +13,13 @@ No account, no cloud. Everything lives in one SQLite file on your machine (only 
 
 - Version **2.2.0**. macOS 12+ only (AppKit, WKWebView, AVFoundation).
 - Full feature list (Chinese): [docs/FEATURES.md](docs/FEATURES.md)
+- Website (Chinese): <https://davidzhanghui.github.io/stone-book/>
+
+<p align="center">
+  <a href="docs/stonebrook-promo-v2.2.mp4"><img src="docs/stonebrook-promo-poster.jpg" width="720" alt="Stonebrook promo film"></a><br>
+  <a href="docs/stonebrook-promo-v2.2.mp4">▶ Watch the promo</a> · <sub>72 seconds, in Chinese: blocks · paste from the web · diagrams and math · boards · sketches · spreadsheets · databases · local-only data</sub><br>
+  <sub>Music: “Awakening Dew” by <a href="https://soundcloud.com/keysofmoon">Keys of Moon</a> (<a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>)</sub>
+</p>
 
 ## What it does
 
@@ -21,7 +28,7 @@ No account, no cloud. Everything lives in one SQLite file on your machine (only 
 | Documents | Six heading levels, nested lists and to-dos, quotes, callouts, code blocks (highlighting for 19 languages), tables, columns, image crop and scale; Markdown shortcuts; comments; synced blocks; templates |
 | Paste and export | Paste from the web and keep the formatting; copy writes both HTML and Markdown; import Markdown; export Markdown / HTML / PDF |
 | Diagrams and math | A built-in Mermaid-style renderer (flowchart, sequence, class, state, ER, Gantt, pie, mind map, timeline); KaTeX, block and inline |
-| Boards | Shapes, connectors, sticky notes, frames, swimlanes, freehand, mind maps, about 23,000 assets, 57 templates; Mermaid / PlantUML converted into editable shapes |
+| Boards | Shapes, connectors, sticky notes, frames, swimlanes, freehand, mind maps, about 23,000 assets, 60 templates; Mermaid / PlantUML converted into editable shapes |
 | Sketches | Excalidraw-compatible hand-drawn whiteboard: bound arrows, text in shapes, frames; opens and saves `.excalidraw` / Obsidian files and pastes to and from excalidraw.com |
 | Spreadsheets | IronCalc formula engine (497 functions), conditional formatting, data validation, dropdowns, filter and sort, freeze panes, multiple sheets, xlsx / CSV |
 | Databases | 21 field types, formulas and relation lookups; table / kanban / gallery / Gantt / calendar / form; virtual scrolling in both directions, tested at 100,000 rows |

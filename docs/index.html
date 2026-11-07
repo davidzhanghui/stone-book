@@ -1,0 +1,574 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>石渠 Stonebrook — 藏书于石，引水成渠</title>
+<meta name="description" content="纯本地的块级文档编辑器：Rust + GPUI 编写，Metal 直接绘制。文档、图表、画板、草图、电子表格、多维表格，全部存在本机一个 SQLite 文件里。">
+<meta property="og:type" content="website">
+<meta property="og:title" content="石渠 Stonebrook — 藏书于石，引水成渠">
+<meta property="og:description" content="纯本地的块级文档编辑器 · Rust + GPUI · 画板 / 草图 / 电子表格 / 多维表格 · 没有账号，没有云端">
+<meta property="og:image" content="https://raw.githubusercontent.com/davidzhanghui/stone-book/main/docs/stonebrook-og.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="logo-256.png">
+<style>
+  :root {
+    --deep:#0E2C37; --mid:#22586A; --edge:#081D25; --groove:#123845; --water:#6FD3E8; --shine:#D8F8FF;
+    --stone:#F4FAF9; --stone-2:#E8F1EF; --stone-3:#C7DBD9; --ink:#132A31; --sub:#4A6670; --faint:#7D959C;
+    --on-deep:#F4FAF9; --on-deep-dim:rgba(232,241,239,.74); --line:rgba(19,42,49,.10);
+    --font-zh:"PingFang SC","Hiragino Sans GB","Noto Sans CJK SC","Microsoft YaHei",sans-serif;
+    --font-en:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    --font-mono:"SF Mono",Menlo,Consolas,monospace;
+    --gutter:clamp(16px,4vw,40px); --maxw:1180px;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html { scroll-behavior:smooth; scroll-padding-top:72px; }
+  body { font-family:var(--font-zh); color:var(--ink); background:var(--stone); line-height:1.6; -webkit-font-smoothing:antialiased; overflow-x:hidden; }
+  img, video { display:block; max-width:100%; height:auto; }
+  a { color:inherit; }
+  br.m { display:none; }
+  .wrap { max-width:var(--maxw); margin:0 auto; padding:0 var(--gutter); }
+  .en { font-family:var(--font-en); font-style:italic; }
+  .kicker { font-family:var(--font-en); font-style:italic; font-size:19px; color:var(--mid); letter-spacing:.01em; }
+  .dark .kicker { color:var(--water); }
+  p code, .sub code { font-family:var(--font-mono); font-size:.88em; padding:1px 6px; border-radius:5px; background:var(--stone-2); color:var(--mid); }
+  .dark p code { background:rgba(18,56,69,.8); color:var(--shine); }
+  :focus-visible { outline:3px solid var(--water); outline-offset:3px; border-radius:6px; }
+
+  /* 导航 */
+  nav { position:fixed; inset:0 0 auto; z-index:50; transition:background .25s, box-shadow .25s; }
+  nav .wrap { height:64px; display:flex; align-items:center; gap:12px; }
+  nav .logo { width:34px; height:34px; }
+  nav .brand { font-weight:600; font-size:18px; color:var(--on-deep); letter-spacing:.04em; }
+  nav .brand .en { font-size:16px; color:var(--water); margin-left:6px; letter-spacing:0; }
+  nav .links { margin-left:auto; display:flex; align-items:center; gap:26px; }
+  nav .links a { text-decoration:none; font-size:15px; color:var(--on-deep-dim); transition:color .2s; }
+  nav .links a:hover, nav .links a[aria-current="true"] { color:var(--on-deep); }
+  nav .links a[aria-current="true"] { box-shadow:0 2px 0 var(--water); }
+  nav .gh { display:inline-flex; align-items:center; gap:7px; padding:7px 15px; border-radius:999px; border:1px solid rgba(216,248,255,.28); }
+  nav .gh svg { width:16px; height:16px; fill:currentColor; }
+  nav.solid { background:rgba(8,29,37,.86); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); box-shadow:0 1px 0 rgba(216,248,255,.08); }
+
+  /* 首屏 */
+  .hero { position:relative; color:var(--on-deep); overflow:hidden; padding:150px 0 0;
+    background:radial-gradient(1200px 760px at 28% 12%, #2A6578 0%, var(--deep) 50%, var(--edge) 100%); }
+  .hero .channel { position:absolute; left:50%; top:-40px; width:1900px; height:1300px; transform:translateX(-50%); pointer-events:none; opacity:.9; }
+  .channel path { fill:none; stroke-linecap:round; }
+  .ch-groove { stroke:rgba(18,56,69,.75); stroke-width:150; }
+  .ch-water { stroke:rgba(111,211,232,.22); stroke-width:62; }
+  .ch-shine { stroke:rgba(216,248,255,.32); stroke-width:10; }
+  .hero-in { position:relative; text-align:center; }
+  .hero .mark { width:112px; height:112px; margin:0 auto; filter:drop-shadow(0 18px 40px rgba(3,16,20,.5)); }
+  .hero .kicker { margin-top:30px; font-size:22px; color:var(--water); }
+  .hero h1 { margin-top:14px; font-size:clamp(40px,6.4vw,78px); font-weight:600; letter-spacing:.06em; line-height:1.15; }
+  .hero .sub { margin:22px auto 0; max-width:700px; font-size:clamp(16px,1.6vw,19px); line-height:1.85; color:var(--on-deep-dim); }
+  .badges { margin-top:26px; display:flex; flex-wrap:wrap; justify-content:center; gap:10px; }
+  .badge { padding:6px 15px; border-radius:999px; font-size:14px; color:var(--shine); background:rgba(18,56,69,.7); border:1px solid rgba(111,211,232,.22); }
+  .cta { margin-top:34px; display:flex; flex-wrap:wrap; justify-content:center; gap:14px; }
+  .btn { display:inline-flex; align-items:center; gap:10px; padding:14px 28px; border-radius:14px; font-size:17px; font-weight:600; text-decoration:none; transition:transform .2s, box-shadow .2s, background .2s; }
+  .btn svg { width:18px; height:18px; }
+  .btn-water { background:var(--water); color:var(--groove); box-shadow:0 12px 30px rgba(111,211,232,.25); }
+  .btn-water:hover { transform:translateY(-2px); box-shadow:0 16px 40px rgba(111,211,232,.35); }
+  .btn-ghost { color:var(--on-deep); border:1px solid rgba(216,248,255,.3); }
+  .btn-ghost:hover { background:rgba(216,248,255,.08); }
+  .cta-note { margin-top:14px; font-size:13.5px; color:var(--on-deep-dim); }
+  .hero-shot { position:relative; margin:64px auto -150px; max-width:1080px; }
+  .window { border-radius:14px; overflow:hidden; background:#fff; box-shadow:0 50px 120px rgba(3,16,20,.55), 0 0 0 1px rgba(255,255,255,.08); }
+  .hero + section { padding-top:210px; }
+
+  /* 通用分区 */
+  section { padding:110px 0; }
+  .sec-head { max-width:760px; }
+  .sec-head.center { margin:0 auto; text-align:center; }
+  .sec-head h2 { margin-top:10px; font-size:clamp(26px,4vw,46px); font-weight:600; line-height:1.25; letter-spacing:.02em; }
+  .sec-head p { margin-top:16px; font-size:17px; color:var(--sub); line-height:1.8; }
+  .dark { color:var(--on-deep); background:radial-gradient(1000px 640px at 80% 0%, #1F5466 0%, var(--deep) 55%, var(--edge) 100%); }
+  .dark .sec-head p { color:var(--on-deep-dim); }
+
+  /* 宣传片 */
+  #film { background:var(--stone); }
+  .video-shell { margin-top:44px; border-radius:20px; overflow:hidden; background:var(--edge); box-shadow:0 40px 100px rgba(14,44,55,.28); aspect-ratio:16/9; }
+  .video-shell video { width:100%; height:100%; object-fit:cover; }
+  .video-note { margin-top:18px; text-align:center; font-size:14px; color:var(--faint); }
+  .video-note a { color:var(--sub); }
+
+  /* 能力 */
+  #features { background:linear-gradient(var(--stone), var(--stone-2)); }
+  .grid { margin-top:52px; display:grid; grid-template-columns:repeat(3,1fr); gap:18px; }
+  .card { position:relative; padding:28px 26px 26px; border-radius:20px; background:linear-gradient(165deg,#FFFFFF 0%, #F6FAF9 60%, #EDF4F2 100%);
+    box-shadow:0 1px 0 rgba(255,255,255,.9) inset, 0 14px 34px rgba(14,44,55,.07), 0 0 0 1px var(--line); }
+  .glyph { width:46px; height:46px; border-radius:13px; background:var(--groove); display:flex; align-items:center; justify-content:center; }
+  .glyph svg { width:24px; height:24px; fill:none; stroke:var(--water); stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+  .card h3 { margin-top:18px; font-size:20px; font-weight:600; }
+  .card p { margin-top:8px; font-size:15px; line-height:1.75; color:var(--sub); }
+  .card .tags { margin-top:14px; display:flex; flex-wrap:wrap; gap:6px; }
+  .card .tags span { font-size:12.5px; padding:3px 10px; border-radius:999px; background:var(--stone-2); color:var(--mid); }
+
+  /* 编辑器展示 */
+  #editors { background:var(--stone-2); }
+  .show { margin-top:48px; display:grid; grid-template-columns:270px 1fr; gap:34px; align-items:start; }
+  .tabs { display:flex; flex-direction:column; gap:6px; position:sticky; top:96px; }
+  .tab { appearance:none; border:0; background:transparent; text-align:left; cursor:pointer; padding:14px 18px; border-radius:14px; font:inherit; color:var(--sub); transition:background .2s, color .2s; }
+  .tab b { display:block; font-size:17px; font-weight:600; color:var(--ink); }
+  .tab span { display:block; margin-top:2px; font-size:13.5px; line-height:1.6; }
+  .tab:hover { background:rgba(255,255,255,.6); }
+  .tab[aria-selected="true"] { background:#fff; box-shadow:0 10px 26px rgba(14,44,55,.08), inset 3px 0 0 var(--water); }
+  .stage { min-width:0; }
+  .panel[hidden] { display:none; }
+  .panel .window { box-shadow:0 30px 80px rgba(14,44,55,.18), 0 0 0 1px var(--line); }
+  .panel .window img { width:100%; height:auto; }
+  .panel-text { margin-top:22px; display:flex; gap:28px; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; }
+  .panel-text h3 { font-size:24px; font-weight:600; }
+  .panel-text p { margin-top:6px; max-width:620px; font-size:15.5px; line-height:1.8; color:var(--sub); }
+  .pills { display:flex; flex-wrap:wrap; gap:6px; padding:6px; border-radius:14px; background:var(--groove); }
+  .pill { appearance:none; border:0; cursor:pointer; font:inherit; font-size:14px; padding:7px 14px; border-radius:10px; color:rgba(232,241,239,.7); background:transparent; }
+  .pill[aria-pressed="true"] { background:var(--water); color:var(--groove); font-weight:600; }
+
+  /* 本地 */
+  .local { display:grid; grid-template-columns:1.05fr 1fr; gap:60px; align-items:center; }
+  .stone { position:relative; padding:34px 34px 30px; border-radius:44px; color:var(--groove);
+    background:linear-gradient(160deg,#FAFCFB 0%, var(--stone-2) 55%, var(--stone-3) 100%); box-shadow:0 40px 90px rgba(3,16,20,.5); overflow:hidden; }
+  .stone::before { content:""; position:absolute; right:-60px; top:-80px; width:260px; height:260px; border-radius:50%; background:radial-gradient(rgba(111,211,232,.28), transparent 70%); }
+  .tree { position:relative; font-family:var(--font-mono); font-size:15.5px; line-height:2.05; }
+  .tree .dir { font-weight:600; font-size:17px; }
+  .tree .c { color:#5E8590; font-family:var(--font-zh); font-size:13.5px; margin-left:10px; }
+  .tree .db { display:inline-block; padding:0 10px; border-radius:8px; background:var(--groove); color:var(--water); font-weight:600; }
+  .facts { margin-top:34px; display:grid; grid-template-columns:1fr 1fr; gap:22px 28px; }
+  .fact h4 { font-size:16.5px; font-weight:600; color:var(--on-deep); display:flex; align-items:center; gap:10px; }
+  .fact h4::before { content:""; width:18px; height:4px; border-radius:2px; background:var(--water); flex:none; }
+  .fact p { margin-top:6px; font-size:14.5px; line-height:1.75; color:var(--on-deep-dim); }
+
+  /* 小功能 */
+  .smalls { margin-top:46px; display:grid; grid-template-columns:repeat(3,1fr); gap:20px; }
+  .smalls figure .window { box-shadow:0 22px 60px rgba(14,44,55,.16), 0 0 0 1px var(--line); }
+  .smalls figcaption { margin-top:14px; }
+  .smalls figcaption b { font-size:17px; }
+  .smalls figcaption kbd { font-family:var(--font-mono); font-size:12.5px; padding:2px 7px; border-radius:6px; background:var(--groove); color:var(--water); margin-left:6px; }
+  .smalls figcaption span { display:block; margin-top:4px; font-size:14.5px; color:var(--sub); line-height:1.7; }
+
+  /* 下载 */
+  #install { background:var(--stone-2); }
+  .install { display:grid; grid-template-columns:1fr 1fr; gap:22px; margin-top:46px; }
+  .grid > *, .smalls > *, .install > *, .local > *, .show > * { min-width:0; }
+  .box { padding:30px; border-radius:22px; background:#fff; box-shadow:0 14px 34px rgba(14,44,55,.07), 0 0 0 1px var(--line); }
+  .box h3 { font-size:20px; font-weight:600; }
+  .box > p { margin-top:8px; font-size:14.5px; color:var(--sub); line-height:1.75; }
+  .dl { margin-top:20px; display:grid; gap:10px; }
+  .dl a { display:flex; align-items:center; gap:14px; padding:14px 18px; border-radius:14px; text-decoration:none; background:var(--groove); color:var(--on-deep); transition:transform .2s, background .2s; }
+  .dl a:hover { transform:translateY(-2px); background:#174555; }
+  .dl a svg { width:22px; height:22px; flex:none; stroke:var(--water); fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+  .dl a b { font-size:16px; }
+  .dl a span { display:block; font-size:13px; color:var(--on-deep-dim); }
+  .dl a em { white-space:nowrap; margin-left:auto; font-style:normal; font-family:var(--font-mono); font-size:13px; color:var(--water); }
+  .codeblock { position:relative; margin-top:18px; border-radius:14px; background:var(--edge); }
+  .codeblock pre { overflow-x:auto; padding:46px 20px 18px; font-family:var(--font-mono); font-size:13.5px; line-height:1.9; color:#DCEBE8; }
+  .codeblock .cm { color:#6E9198; }
+  .copy-btn { position:absolute; top:10px; right:10px; padding:5px 12px; font:inherit; font-size:12px; border-radius:8px; border:1px solid rgba(216,248,255,.2); background:rgba(216,248,255,.06); color:#CFE3E0; cursor:pointer; }
+  .note { margin-top:14px; font-size:13.5px; line-height:1.75; color:var(--faint); }
+  .note code { font-family:var(--font-mono); font-size:12.5px; padding:1px 6px; border-radius:5px; background:var(--stone-2); color:var(--mid); }
+
+  /* 页脚 */
+  footer { padding:64px 0 54px; color:var(--on-deep-dim); background:var(--edge); }
+  footer .wrap { display:flex; flex-wrap:wrap; gap:24px 40px; align-items:center; justify-content:space-between; }
+  footer .f-brand { display:flex; align-items:center; gap:14px; color:var(--on-deep); }
+  footer .f-brand img { width:44px; height:44px; }
+  footer .f-brand b { font-size:18px; letter-spacing:.06em; }
+  footer .f-brand span { display:block; font-size:13.5px; color:var(--on-deep-dim); }
+  footer p { font-size:13px; line-height:1.9; }
+  footer a { color:var(--shine); }
+
+  /* 入场 */
+  .js .reveal { opacity:0; transform:translateY(22px); transition:opacity .8s cubic-bezier(.2,.7,.2,1), transform .8s cubic-bezier(.2,.7,.2,1); }
+  .js .reveal.on { opacity:1; transform:none; }
+  .js .channel path { stroke-dasharray:var(--len); stroke-dashoffset:var(--len); animation:flow 2.6s cubic-bezier(.45,.05,.2,1) .15s forwards; }
+  @keyframes flow { to { stroke-dashoffset:0; } }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior:auto; }
+    .js .reveal { opacity:1; transform:none; transition:none; }
+    .js .channel path { animation:none; stroke-dashoffset:0; }
+  }
+
+  /* 响应式 */
+  @media (max-width:1000px) {
+    .grid { grid-template-columns:1fr 1fr; }
+    .show { grid-template-columns:1fr; }
+    .tabs { position:static; flex-direction:row; overflow-x:auto; margin:0 calc(-1 * var(--gutter)); padding:0 var(--gutter) 6px; scrollbar-width:none; }
+    .tab { flex:none; padding:10px 16px; }
+    .tab span { display:none; }
+    .local { grid-template-columns:1fr; gap:44px; }
+  }
+  @media (max-width:720px) {
+    nav .links a:not(.gh) { display:none; }
+    .hero { padding-top:118px; }
+    br.m { display:inline; }
+    .hero h1 { font-size:44px; letter-spacing:.04em; }
+    .hero-shot { margin:44px auto -80px; }
+    .hero + section { padding-top:130px; }
+    section { padding:76px 0; }
+    .grid, .smalls, .install, .facts { grid-template-columns:1fr; }
+    .stone { border-radius:30px; padding:26px 22px; }
+    .tree { font-size:13.5px; }
+    .tree .c { display:block; margin:-8px 0 4px 22px; }
+  }
+</style>
+</head>
+<body>
+<script>document.documentElement.classList.add('js')</script>
+
+<nav id="nav">
+  <div class="wrap">
+    <img class="logo" src="logo.svg" alt="">
+    <span class="brand">石渠<span class="en">Stonebrook</span></span>
+    <div class="links">
+      <a href="#film">宣传片</a>
+      <a href="#features">能力</a>
+      <a href="#editors">编辑器</a>
+      <a href="#local">本地</a>
+      <a href="#install">下载</a>
+      <a class="gh" href="https://github.com/davidzhanghui/stone-book" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        GitHub
+      </a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <svg class="channel" viewBox="0 0 1900 1300" aria-hidden="true">
+    <path class="ch-groove" d="M -100 300 C 250 420, 420 900, 900 930 S 1550 760, 2000 260"/>
+    <path class="ch-water" d="M -100 300 C 250 420, 420 900, 900 930 S 1550 760, 2000 260"/>
+    <path class="ch-shine" d="M -100 300 C 250 420, 420 900, 900 930 S 1550 760, 2000 260"/>
+  </svg>
+  <div class="wrap hero-in">
+    <img class="mark" src="logo.svg" alt="石渠图标">
+    <div class="kicker">A local-first block editor for macOS</div>
+    <h1>藏书于石，<br class="m">引水成渠。</h1>
+    <p class="sub">石渠是一款纯本地的块级文档编辑器。文档、流程图、画板、草图、电子表格、多维表格写在同一个地方，全部存在你 Mac 上的一个 SQLite 文件里。没有账号，没有云端。</p>
+    <div class="badges">
+      <span class="badge">开源 · MIT</span>
+      <span class="badge">Rust + GPUI</span>
+      <span class="badge">Metal 直接绘制</span>
+      <span class="badge">macOS 12+</span>
+      <span class="badge">v2.2.0</span>
+    </div>
+    <div class="cta">
+      <a class="btn btn-water" href="#install">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>
+        下载 macOS 版
+      </a>
+      <a class="btn btn-ghost" href="#film">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg>
+        观看 72 秒宣传片
+      </a>
+    </div>
+    <p class="cta-note">支持 Apple 芯片与 Intel · 约 23 MB</p>
+    <div class="hero-shot reveal">
+      <div class="window"><img src="screenshots/welcome.webp" width="1600" height="1039" alt="石渠主窗口：左侧文档树，中间是欢迎文档，右侧大纲"></div>
+    </div>
+  </div>
+</header>
+
+<section id="film">
+  <div class="wrap">
+    <div class="sec-head center reveal">
+      <div class="kicker">The film</div>
+      <h2>72 秒，看完石渠</h2>
+      <p>片中所有界面都是真实运行的石渠 v2.2.0，没有重绘。</p>
+    </div>
+    <div class="video-shell reveal">
+      <video controls playsinline preload="metadata" poster="stonebrook-promo-poster.jpg">
+        <source src="stonebrook-promo-v2.2.mp4" type="video/mp4">
+        <source src="https://raw.githubusercontent.com/davidzhanghui/stone-book/main/docs/stonebrook-promo-v2.2.mp4" type="video/mp4">
+      </video>
+    </div>
+    <p class="video-note">按块书写 · 网页粘贴还原 · 流程图与公式 · 画板 · 草图 · 电子表格 · 多维表格 · 数据只在本机<br>
+      配乐：“Awakening Dew” by <a href="https://soundcloud.com/keysofmoon" target="_blank" rel="noopener">Keys of Moon</a>（<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>）</p>
+  </div>
+</section>
+
+<section id="features">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="kicker">What it does</div>
+      <h2>一块块内容，垒成一篇文档</h2>
+      <p>文档由块组成：段落、表格、代码是块，画板、表格、多维表格也是块。双击一个嵌入块，它就展开成全屏编辑器。</p>
+    </div>
+    <div class="grid">
+      <article class="card reveal">
+        <div class="glyph"><svg viewBox="0 0 24 24"><path d="M5 5h14M5 10h9M5 15h14M5 20h7"/></svg></div>
+        <h3>文档编辑</h3>
+        <p>六级标题、多级列表与待办、引用、高亮块、分栏、图片裁剪；Markdown 快捷语法随手生效，<code>/</code> 菜单支持拼音。</p>
+        <div class="tags"><span>19 种语言高亮</span><span>评论</span><span>同步块</span><span>模板</span></div>
+      </article>
+      <article class="card reveal">
+        <div class="glyph"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="11" height="14" rx="2"/><path d="M9 20h9a2 2 0 0 0 2-2V8"/></svg></div>
+        <h3>粘贴与导出</h3>
+        <p>从网页复制，标题、列表、表格、代码块原样还原；复制时同时写出 HTML 和 Markdown。</p>
+        <div class="tags"><span>导入 Markdown</span><span>导出 MD / HTML / PDF</span></div>
+      </article>
+      <article class="card reveal">
+        <div class="glyph"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="6" height="5" rx="1"/><rect x="15" y="4" width="6" height="5" rx="1"/><rect x="9" y="15" width="6" height="5" rx="1"/><path d="M6 9v3h12V9M12 12v3"/></svg></div>
+        <h3>图表与公式</h3>
+        <p>自研 Mermaid 风格渲染器，不依赖浏览器：流程、时序、类、状态、ER、甘特、饼图、思维导图、时间线；KaTeX 公式。</p>
+        <div class="tags"><span>9 类图表</span><span>块级 / 行内公式</span></div>
+      </article>
+      <article class="card reveal">
+        <div class="glyph"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><circle cx="4.5" cy="6" r="1.8"/><circle cx="19.5" cy="6" r="1.8"/><circle cx="4.5" cy="18" r="1.8"/><circle cx="19.5" cy="18" r="1.8"/><path d="M6 7l3.6 3M18 7l-3.6 3M6 17l3.6-3M18 17l-3.6-3"/></svg></div>
+        <h3>画板</h3>
+        <p>图形、连线、便签、分区、泳道、画笔、思维导图；Mermaid / PlantUML 一键转成可编辑图形。</p>
+        <div class="tags"><span>60 个模板</span><span>约 2.3 万个素材</span></div>
+      </article>
+      <article class="card reveal">
+        <div class="glyph"><svg viewBox="0 0 24 24"><path d="M4 18c3-1 4-5 7-5s3 3 5 3 3-3 4-5"/><path d="M15 4l5 5-9 9H6v-5z"/></svg></div>
+        <h3>草图</h3>
+        <p>Excalidraw 兼容的手绘白板：箭头绑定、容器文字、框架。存储就是官方 <code>.excalidraw</code> 格式。</p>
+        <div class="tags"><span>与官网剪贴板互通</span><span>Obsidian 文件</span></div>
+      </article>
+      <article class="card reveal">
+        <div class="glyph"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M3 14h18M9 4v16M15 4v16"/></svg></div>
+        <h3>电子表格</h3>
+        <p>IronCalc 公式引擎，改一个数相关格子自动重算；条件格式、数据验证、下拉列表、冻结、多工作表。</p>
+        <div class="tags"><span>497 个函数</span><span>xlsx / CSV</span></div>
+      </article>
+      <article class="card reveal">
+        <div class="glyph"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="9.5" y="4" width="5" height="10" rx="1.5"/><rect x="16" y="4" width="5" height="13" rx="1.5"/></svg></div>
+        <h3>多维表格</h3>
+        <p>21 种字段、公式与关联引用；表格、看板、画册、甘特、日历、表单六种视图，行列双向虚拟滚动。</p>
+        <div class="tags"><span>六种视图</span><span>10 万行压测</span></div>
+      </article>
+      <article class="card reveal">
+        <div class="glyph"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9.5v5l4-2.5z"/></svg></div>
+        <h3>富内容</h3>
+        <p>网页卡片、视频、文件附件（代码 / PDF / Office / 音频 / 压缩包预览）、HTML 块、倒计时、按钮、时间轴。</p>
+        <div class="tags"><span>附件预览</span><span>网页卡片可关联网</span></div>
+      </article>
+      <article class="card reveal">
+        <div class="glyph"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg></div>
+        <h3>效率</h3>
+        <p>文档树与回收站、FTS5 全文搜索、命令面板（拼音）、大纲、演示模式、专注模式、写作热力图。</p>
+        <div class="tags"><span>⇧⌘P 命令面板</span><span>深浅主题</span></div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section id="editors">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="kicker">Six surfaces, one file</div>
+      <h2>六种编辑面，都是真实界面</h2>
+      <p>下面每张截图都来自石渠 v2.2.0 本身，演示数据是虚构的。</p>
+    </div>
+    <div class="show reveal">
+      <div class="tabs" role="tablist" aria-label="编辑器">
+        <button class="tab" role="tab" id="t-doc" aria-controls="p-doc" aria-selected="true"><b>文档</b><span>网页内容一次粘贴到位</span></button>
+        <button class="tab" role="tab" id="t-diagram" aria-controls="p-diagram" aria-selected="false" tabindex="-1"><b>图表与公式</b><span>几行文字就是流程图</span></button>
+        <button class="tab" role="tab" id="t-board" aria-controls="p-board" aria-selected="false" tabindex="-1"><b>画板</b><span>从模板到思维导图</span></button>
+        <button class="tab" role="tab" id="t-sketch" aria-controls="p-sketch" aria-selected="false" tabindex="-1"><b>草图</b><span>与 Excalidraw 互通</span></button>
+        <button class="tab" role="tab" id="t-sheet" aria-controls="p-sheet" aria-selected="false" tabindex="-1"><b>电子表格</b><span>公式真能算</span></button>
+        <button class="tab" role="tab" id="t-base" aria-controls="p-base" aria-selected="false" tabindex="-1"><b>多维表格</b><span>一份数据，多种看法</span></button>
+      </div>
+      <div class="stage">
+        <div class="panel" role="tabpanel" id="p-doc" aria-labelledby="t-doc">
+          <div class="window"><img src="screenshots/paste.webp" width="1600" height="1039" alt="从网页粘贴后的文档：标题、列表、表格、代码块均已还原" loading="lazy"></div>
+          <div class="panel-text"><div><h3>网页复制过来，格式原样还原</h3><p>从浏览器复制一段发布清单，⌘V 之后标题、列表、表格和 Rust 代码块都变成了对应的块，不用再手动整理。</p></div></div>
+        </div>
+        <div class="panel" role="tabpanel" id="p-diagram" aria-labelledby="t-diagram" hidden>
+          <div class="window"><img src="screenshots/diagram.webp" width="1600" height="758" alt="文档里由 Mermaid 写法渲染出的流程图和一条公式" loading="lazy"></div>
+          <div class="panel-text"><div><h3>写几行文字，就是流程图和公式</h3><p>粘贴一段含 Mermaid 和 <code>$$</code> 的 Markdown，自动生成流程图块与公式块。解析和布局都是自研的，在本机完成，不用联网。</p></div></div>
+        </div>
+        <div class="panel" role="tabpanel" id="p-board" aria-labelledby="t-board" hidden>
+          <div class="window"><img data-swap src="screenshots/board-mind.webp" width="1600" height="1039" alt="全屏画板：项目规划思维导图" loading="lazy"></div>
+          <div class="panel-text">
+            <div><h3>画板：60 个模板，每个图形都能再改</h3><p>思维导图、系统架构图、泳道、鱼骨图、SWOT……模板全部由普通图形组成；在文档里双击画板预览，就展开成全屏编辑器。</p></div>
+            <div class="pills" role="group" aria-label="切换模板">
+              <button class="pill" aria-pressed="true" data-src="screenshots/board-mind.webp" data-alt="全屏画板：项目规划思维导图">思维导图</button>
+              <button class="pill" aria-pressed="false" data-src="screenshots/board-arch.webp" data-alt="全屏画板：分层的系统架构图模板">系统架构图</button>
+            </div>
+          </div>
+        </div>
+        <div class="panel" role="tabpanel" id="p-sketch" aria-labelledby="t-sketch" hidden>
+          <div class="window"><img src="screenshots/sketch.webp" width="1600" height="1039" alt="手绘草图：灵感、方案、上线三个图形用箭头相连" loading="lazy"></div>
+          <div class="panel-text"><div><h3>手绘草图，与 Excalidraw 互通</h3><p>文件就是官方 <code>.excalidraw</code> 格式，能和 excalidraw.com、Obsidian 来回复制粘贴；箭头会绑定在图形上，拖动图形箭头跟着走。</p></div></div>
+        </div>
+        <div class="panel" role="tabpanel" id="p-sheet" aria-labelledby="t-sheet" hidden>
+          <div class="window"><img src="screenshots/sheet.webp" width="1560" height="1010" alt="电子表格：季度用户数据、合计行、百分比留存率和数据条" loading="lazy"></div>
+          <div class="panel-text"><div><h3>电子表格，公式真能算</h3><p>IronCalc 引擎、497 个 Excel 函数，输入 <code>=SU</code> 就有函数补全；数字格式、条件格式数据条，改一个数，相关格子自动重算。</p></div></div>
+        </div>
+        <div class="panel" role="tabpanel" id="p-base" aria-labelledby="t-base" hidden>
+          <div class="window"><img data-swap src="screenshots/base-grid.webp" width="1600" height="1039" alt="多维表格：迭代任务的表格视图" loading="lazy"></div>
+          <div class="panel-text">
+            <div><h3>一份数据，多种看法</h3><p>同一批任务在表格、看板、甘特、日历之间切换；行列双向虚拟滚动，附带 10 万行压测数据。</p></div>
+            <div class="pills" role="group" aria-label="切换视图">
+              <button class="pill" aria-pressed="true" data-src="screenshots/base-grid.webp" data-alt="多维表格：迭代任务的表格视图">表格</button>
+              <button class="pill" aria-pressed="false" data-src="screenshots/base-kanban.webp" data-alt="多维表格：按状态分组的看板视图">看板</button>
+              <button class="pill" aria-pressed="false" data-src="screenshots/base-gantt.webp" data-alt="多维表格：甘特视图">甘特</button>
+              <button class="pill" aria-pressed="false" data-src="screenshots/base-calendar.webp" data-alt="多维表格：日历视图">日历</button>
+              <button class="pill" aria-pressed="false" data-src="screenshots/base-stress.webp" data-alt="多维表格：10 万行压测数据">10 万行</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="local" class="dark">
+  <div class="wrap local">
+    <div class="reveal">
+      <div class="sec-head">
+        <div class="kicker">Stays on your Mac</div>
+        <h2>数据只在这台 Mac 上</h2>
+        <p>石渠没有账号、没有服务器。所有内容汇进本机一个 SQLite 文件，复制整个目录就是备份。只有「网页卡片」会按需联网，可以在设置里关掉。</p>
+      </div>
+      <div class="facts">
+        <div class="fact"><h4>单线程顺序写入</h4><p>所有写操作进同一个后台写线程，按提交顺序执行；退出前等写队列清空。</p></div>
+        <div class="fact"><h4>失败看得见</h4><p>写库失败会在界面顶部提示原因，不会静默丢数据。</p></div>
+        <div class="fact"><h4>损坏不覆盖</h4><p>文档无法解析时，原文备份到 <code>recovery/</code>，不会把空内容写回去。</p></div>
+        <div class="fact"><h4>完整备份与恢复</h4><p>一键打包数据库快照和资源为 zip；恢复时旧数据移到 <code>recovery/</code>，不会删除。</p></div>
+      </div>
+    </div>
+    <div class="stone reveal" aria-label="数据目录结构">
+      <div class="tree">
+        <div class="dir">~/Stonebrook/</div>
+        <div>├─ <span class="db">stonebrook.db</span><span class="c">文档、画板、表格……全部内容</span></div>
+        <div>├─ assets/<span class="c">图片与附件</span></div>
+        <div>└─ recovery/<span class="c">损坏或恢复前的原数据</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="more">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="kicker">And the small things</div>
+      <h2>还有这些顺手的</h2>
+    </div>
+    <div class="smalls">
+      <figure class="reveal">
+        <div class="window"><img src="screenshots/palette.webp" width="1600" height="1039" alt="命令面板：输入拼音 daochu 搜到导出命令" loading="lazy"></div>
+        <figcaption><b>命令面板</b><kbd>⇧⌘P</kbd><span>输入拼音 daochu，就能找到「导出为 PDF」。</span></figcaption>
+      </figure>
+      <figure class="reveal">
+        <div class="window"><img src="screenshots/dark.webp" width="1600" height="1039" alt="深色主题下的欢迎文档" loading="lazy"></div>
+        <figcaption><b>深浅主题</b><kbd>⇧⌘D</kbd><span>一键切换，公式和图表跟着一起变色。</span></figcaption>
+      </figure>
+      <figure class="reveal">
+        <div class="window"><img src="screenshots/focus.webp" width="1600" height="1039" alt="专注模式：隐藏侧栏和工具栏，只留正文" loading="lazy"></div>
+        <figcaption><b>专注模式</b><kbd>⇧⌘F</kbd><span>隐藏侧栏和工具栏，只留下正文。</span></figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<section id="install">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="kicker">Get it</div>
+      <h2>下载石渠</h2>
+      <p>当前版本 v2.2.0，需要 macOS 12 或更新版本。</p>
+    </div>
+    <div class="install">
+      <div class="box reveal">
+        <h3>安装包</h3>
+        <p>下载对应芯片的 DMG，把「石渠」拖进「应用程序」。</p>
+        <div class="dl">
+          <a href="https://github.com/davidzhanghui/stone-book/releases/download/v2.2.0/Stonebrook-2.2.0-arm64.dmg">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>
+            <div><b>Apple 芯片</b><span>M1 / M2 / M3 / M4 · arm64</span></div><em>23.7 MB</em>
+          </a>
+          <a href="https://github.com/davidzhanghui/stone-book/releases/download/v2.2.0/Stonebrook-2.2.0-x86_64.dmg">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>
+            <div><b>Intel 芯片</b><span>x86_64</span></div><em>25.7 MB</em>
+          </a>
+        </div>
+        <p class="note">安装包使用 ad-hoc 签名，首次打开如被拦截，请到「系统设置 → 隐私与安全性」中点「仍要打开」。其他版本见 <a href="https://github.com/davidzhanghui/stone-book/releases" target="_blank" rel="noopener">Releases</a>。</p>
+      </div>
+      <div class="box reveal">
+        <h3>从源码构建</h3>
+        <p>需要 Rust 1.85+ 和 Xcode 命令行工具，不需要 Metal 工具链。</p>
+        <div class="codeblock">
+          <pre><code>git clone https://github.com/davidzhanghui/stone-book.git
+cd stone-book
+<span class="cm"># 直接运行</span>
+cargo run --release
+<span class="cm"># 打包 dist/石渠.app + DMG</span>
+scripts/build.sh</code></pre>
+          <button class="copy-btn" data-copy="git clone https://github.com/davidzhanghui/stone-book.git
+cd stone-book
+cargo run --release">复制</button>
+        </div>
+        <p class="note">数据目录默认 <code>~/Stonebrook/</code>，可用环境变量 <code>STONEBROOK_DATA_DIR</code> 覆盖。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="f-brand"><img src="logo.svg" alt=""><div><b>石渠 Stonebrook</b><span>藏书于石，引水成渠。</span></div></div>
+    <p>MIT License · <a href="https://github.com/davidzhanghui/stone-book" target="_blank" rel="noopener">GitHub</a> · <a href="https://github.com/davidzhanghui/stone-book/blob/main/docs/FEATURES.md" target="_blank" rel="noopener">完整功能清单</a><br>
+      宣传片配乐 “Awakening Dew” by Keys of Moon，CC BY 4.0</p>
+  </div>
+</footer>
+
+<script>
+  // 渠线描出：按路径实际长度设置虚线
+  document.querySelectorAll('.channel path').forEach(p => p.style.setProperty('--len', Math.ceil(p.getTotalLength())));
+
+  // 滚动入场
+  const io = new IntersectionObserver(es => es.forEach(e => {
+    if (e.isIntersecting) { e.target.classList.add('on'); io.unobserve(e.target); }
+  }), { threshold: .1 });
+  document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+
+  // 导航：离开首屏后加底色；滚到哪一节高亮哪一项
+  const nav = document.getElementById('nav');
+  const onScroll = () => nav.classList.toggle('solid', scrollY > 40);
+  addEventListener('scroll', onScroll, { passive: true }); onScroll();
+  const links = [...nav.querySelectorAll('.links a[href^="#"]')];
+  const spy = new IntersectionObserver(es => es.forEach(e => {
+    if (!e.isIntersecting) return;
+    links.forEach(a => a.setAttribute('aria-current', a.getAttribute('href') === '#' + e.target.id ? 'true' : 'false'));
+  }), { rootMargin: '-45% 0px -50% 0px' });
+  ['top', 'film', 'features', 'editors', 'local', 'more', 'install'].forEach(id => spy.observe(document.getElementById(id)));
+
+  // 编辑器选项卡（支持左右 / 上下方向键）
+  const tabs = [...document.querySelectorAll('.tab')];
+  const select = t => {
+    tabs.forEach(x => {
+      const on = x === t;
+      x.setAttribute('aria-selected', on); x.tabIndex = on ? 0 : -1;
+      document.getElementById(x.getAttribute('aria-controls')).hidden = !on;
+    });
+  };
+  tabs.forEach((t, i) => {
+    t.addEventListener('click', () => select(t));
+    t.addEventListener('keydown', e => {
+      const d = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key];
+      if (!d) return;
+      e.preventDefault(); const n = tabs[(i + d + tabs.length) % tabs.length]; select(n); n.focus();
+    });
+  });
+
+  // 面板内切换截图（画板模板 / 多维表格视图）
+  document.querySelectorAll('.pills').forEach(g => g.addEventListener('click', e => {
+    const b = e.target.closest('.pill'); if (!b) return;
+    g.querySelectorAll('.pill').forEach(x => x.setAttribute('aria-pressed', x === b));
+    const img = g.closest('.panel').querySelector('img[data-swap]');
+    img.src = b.dataset.src; img.alt = b.dataset.alt;
+  }));
+  // 预加载切换用的截图，避免点击后闪白
+  addEventListener('load', () => document.querySelectorAll('.pill').forEach(b => { new Image().src = b.dataset.src; }));
+
+  document.querySelectorAll('.copy-btn').forEach(btn => btn.addEventListener('click', () => {
+    navigator.clipboard.writeText(btn.dataset.copy).then(() => {
+      const t = btn.textContent; btn.textContent = '已复制';
+      setTimeout(() => btn.textContent = t, 1400);
+    });
+  }));
+</script>
+</body>
+</html>

@@ -12,6 +12,13 @@
 
 - 版本 **2.2.0**，仅支持 macOS 12+（依赖 AppKit、WKWebView、AVFoundation）
 - 完整功能清单：[docs/FEATURES.md](docs/FEATURES.md)
+- 官网：<https://davidzhanghui.github.io/stone-book/>
+
+<p align="center">
+  <a href="docs/stonebrook-promo-v2.2.mp4"><img src="docs/stonebrook-promo-poster.jpg" width="720" alt="石渠宣传片"></a><br>
+  <a href="docs/stonebrook-promo-v2.2.mp4">▶ 观看宣传片</a> · <sub>72 秒：按块书写 · 网页粘贴还原 · 流程图与公式 · 画板 · 草图 · 电子表格 · 多维表格 · 数据只在本机</sub><br>
+  <sub>配乐：“Awakening Dew” by <a href="https://soundcloud.com/keysofmoon">Keys of Moon</a>（<a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>）</sub>
+</p>
 
 ## 能做什么
 
@@ -20,7 +27,7 @@
 | 文档编辑 | 六级标题、多级列表与待办、引用、高亮块、代码块（19 种语言高亮）、表格、分栏、图片裁剪缩放；Markdown 快捷语法；评论；同步块；模板 |
 | 粘贴与导出 | 从网页粘贴还原格式；复制同时写出 HTML + Markdown；导入 Markdown，导出 Markdown / HTML / PDF |
 | 图表与公式 | 自研 Mermaid 风格渲染器（流程、时序、类、状态、ER、甘特、饼图、思维导图、时间线）；KaTeX 块级与行内公式 |
-| 画板 | 图形、连线、便签、分区、泳道、画笔、思维导图、约 2.3 万个素材、57 个模板；Mermaid / PlantUML 转可编辑图形 |
+| 画板 | 图形、连线、便签、分区、泳道、画笔、思维导图、约 2.3 万个素材、60 个模板；Mermaid / PlantUML 转可编辑图形 |
 | 草图 | Excalidraw 兼容的手绘白板：箭头绑定、容器文字、框架；`.excalidraw` / Obsidian 文件与官网剪贴板双向互通 |
 | 电子表格 | IronCalc 公式引擎（497 个函数）、条件格式、数据验证、下拉列表、筛选排序、冻结、多工作表、xlsx / CSV |
 | 多维表格 | 21 种字段、公式与关联引用；表格 / 看板 / 画册 / 甘特 / 日历 / 表单六种视图；行列双向虚拟滚动，附 10 万行压测 |
